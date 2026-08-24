@@ -1,14 +1,12 @@
-// Printer service — runs continuously on a Raspberry Pi or the counter mini-PC.
+// Printer service — runs continuously on a Raspberry Pi or counter mini-PC.
 //
-// Two things happen:
-//   1. New items land on an order (INSERT into order_items) →
-//      after a short debounce we print a KITCHEN ticket with the batch.
-//      This means both brand-new orders AND "add-on" baskets to an
-//      already-open table both produce a fresh kitchen ticket.
-//   2. Order is marked paid (orders.status → 'paid') → print RECEIPT.
+// All printing is driven by inserts into the `print_jobs` table:
+//   kind = 'kitchen'  → payload: {item_ids: [..]}  (the batch to print)
+//   kind = 'receipt'  → full itemised bill for the order
+//   kind = 'void'     → payload: {item_id, reason} — void notice to kitchen
 //
-// If PRINTER_IP is not set, we log tickets to the console instead
-// (useful for developing without hardware).
+// The printer marks each job as printed (sets printed_at) after success.
+// If PRINTER_IP is unset, jobs are logged to the console instead.
 
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
@@ -16,19 +14,16 @@ const { ThermalPrinter, PrinterTypes } = require('node-thermal-printer');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-const PRINTER_IP = process.env.PRINTER_IP; // e.g. "192.168.1.87"
+const PRINTER_IP = process.env.PRINTER_IP;
 const FALLBACK_SHOP_NAME = process.env.SHOP_NAME || 'DIM SUM SHOP';
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('❌ Missing SUPABASE_URL or SUPABASE_ANON_KEY in .env');
   process.exit(1);
 }
-
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// --------------------------------------------------------------------------
-// Settings — cached locally, refreshed on the shop_settings realtime channel
-// --------------------------------------------------------------------------
+// --- settings cache --------------------------------------------------------
 let settings = {
   shop_name: FALLBACK_SHOP_NAME,
   shop_name_zh: '',
@@ -39,11 +34,7 @@ let settings = {
 };
 
 async function refreshSettings() {
-  const { data } = await supabase
-    .from('shop_settings')
-    .select('*')
-    .eq('id', 1)
-    .single();
+  const { data } = await supabase.from('shop_settings').select('*').eq('id', 1).single();
   if (data) {
     settings = {
       shop_name: data.shop_name || FALLBACK_SHOP_NAME,
@@ -56,198 +47,220 @@ async function refreshSettings() {
   }
 }
 
-// --------------------------------------------------------------------------
-// Debounce: batch order_items inserts per order for 900ms so appended
-// baskets print as ONE ticket rather than one line per row.
-// --------------------------------------------------------------------------
-const pendingByOrder = new Map(); // order_id → { itemIds: Set, timer }
-const KITCHEN_DEBOUNCE_MS = 900;
-
-function scheduleKitchenPrint(orderId, itemId) {
-  let entry = pendingByOrder.get(orderId);
-  if (!entry) {
-    entry = { itemIds: new Set(), timer: null };
-    pendingByOrder.set(orderId, entry);
-  }
-  entry.itemIds.add(itemId);
-  clearTimeout(entry.timer);
-  entry.timer = setTimeout(() => flushKitchen(orderId), KITCHEN_DEBOUNCE_MS);
+// --- printer helper --------------------------------------------------------
+function newPrinter() {
+  return new ThermalPrinter({
+    type: PrinterTypes.EPSON,
+    interface: `tcp://${PRINTER_IP}`,
+  });
 }
 
-async function flushKitchen(orderId) {
-  const entry = pendingByOrder.get(orderId);
-  if (!entry) return;
-  pendingByOrder.delete(orderId);
+// --- job dispatcher --------------------------------------------------------
+async function processJob(job) {
+  try {
+    if (job.kind === 'kitchen') await handleKitchen(job);
+    else if (job.kind === 'receipt') await handleReceipt(job);
+    else if (job.kind === 'void') await handleVoid(job);
+    else console.warn('Unknown job kind:', job.kind);
 
-  const itemIds = [...entry.itemIds];
+    await supabase
+      .from('print_jobs')
+      .update({ printed_at: new Date().toISOString() })
+      .eq('id', job.id);
+  } catch (err) {
+    console.error(`❌ Job ${job.id} (${job.kind}) failed:`, err.message);
+  }
+}
+
+// --- KITCHEN TICKET --------------------------------------------------------
+async function handleKitchen(job) {
+  const itemIds = job.payload?.item_ids ?? [];
+  if (!job.order_id || itemIds.length === 0) return;
+
   const [{ data: order }, { data: items }] = await Promise.all([
-    supabase.from('orders').select('*').eq('id', orderId).single(),
+    supabase.from('orders').select('*').eq('id', job.order_id).single(),
     supabase.from('order_items').select('*').in('id', itemIds).order('id'),
   ]);
   if (!order || !items || items.length === 0) return;
 
-  await printKitchenTicket(order, items);
-}
-
-async function fetchOrderWithItems(orderId) {
-  const [{ data: order }, { data: items }] = await Promise.all([
-    supabase.from('orders').select('*').eq('id', orderId).single(),
-    supabase.from('order_items').select('*').eq('order_id', orderId).order('id'),
-  ]);
-  return { order, items: items ?? [] };
-}
-
-// --------------------------------------------------------------------------
-// KITCHEN TICKET (per batch of new items)
-// --------------------------------------------------------------------------
-async function printKitchenTicket(order, items) {
   const timeStr = new Date().toLocaleTimeString('en-MY');
-  const lines = [];
-  lines.push('===================================');
-  lines.push(`   TABLE ${order.table_number}   Order #${order.id}`);
-  lines.push('===================================');
-  lines.push(timeStr);
-  lines.push('-----------------------------------');
-  items.forEach((i) => {
-    lines.push(`  ${i.qty}x  ${i.name_snapshot}`);
-    if (i.name_zh_snapshot) lines.push(`         ${i.name_zh_snapshot}`);
-  });
-  lines.push('===================================');
-  const output = lines.join('\n');
+  const lines = [
+    '===================================',
+    `   TABLE ${order.table_number}   Order #${order.id}`,
+    '===================================',
+    timeStr,
+    '-----------------------------------',
+    ...items.flatMap((i) => {
+      const rows = [`  ${i.qty}x  ${i.name_snapshot}`];
+      if (i.name_zh_snapshot) rows.push(`         ${i.name_zh_snapshot}`);
+      return rows;
+    }),
+    '===================================',
+  ];
 
   if (!PRINTER_IP) {
-    console.log('\n📄 KITCHEN TICKET (would print):\n' + output + '\n');
+    console.log('\n📄 KITCHEN TICKET (would print):\n' + lines.join('\n') + '\n');
     return;
   }
 
-  try {
-    const printer = new ThermalPrinter({
-      type: PrinterTypes.EPSON,
-      interface: `tcp://${PRINTER_IP}`,
-    });
-    printer.alignCenter();
-    printer.setTextSize(1, 1);
+  const printer = newPrinter();
+  printer.alignCenter();
+  printer.setTextSize(1, 1);
+  printer.bold(true);
+  printer.println(`TABLE ${order.table_number}`);
+  printer.setTextNormal();
+  printer.bold(false);
+  printer.println(`Order #${order.id}`);
+  printer.println(timeStr);
+  printer.drawLine();
+  printer.alignLeft();
+  items.forEach((i) => {
     printer.bold(true);
-    printer.println(`TABLE ${order.table_number}`);
-    printer.setTextNormal();
+    printer.println(`${i.qty}x  ${i.name_snapshot}`);
     printer.bold(false);
-    printer.println(`Order #${order.id}`);
-    printer.println(timeStr);
-    printer.drawLine();
-    printer.alignLeft();
-    items.forEach((i) => {
-      printer.bold(true);
-      printer.println(`${i.qty}x  ${i.name_snapshot}`);
-      printer.bold(false);
-      if (i.name_zh_snapshot) {
-        printer.println(`     ${i.name_zh_snapshot}`);
-      }
-    });
-    printer.cut();
-    await printer.execute();
-    console.log(`🖨️  Kitchen ticket printed for order #${order.id} (${items.length} items)`);
-  } catch (err) {
-    console.error('❌ Kitchen print failed:', err.message);
-  }
+    if (i.name_zh_snapshot) printer.println(`     ${i.name_zh_snapshot}`);
+  });
+  printer.cut();
+  await printer.execute();
+  console.log(`🖨️  Kitchen ticket printed for order #${order.id} (${items.length} items)`);
 }
 
-// --------------------------------------------------------------------------
-// CUSTOMER RECEIPT (on payment)
-// --------------------------------------------------------------------------
-async function printReceipt(order, items) {
+// --- CUSTOMER RECEIPT ------------------------------------------------------
+async function handleReceipt(job) {
+  if (!job.order_id) return;
+
+  const [{ data: order }, { data: allItems }] = await Promise.all([
+    supabase.from('orders').select('*').eq('id', job.order_id).single(),
+    supabase.from('order_items').select('*').eq('order_id', job.order_id).order('id'),
+  ]);
+  if (!order) return;
+
+  // exclude voided items from the receipt
+  const items = (allItems ?? []).filter((i) => !i.voided_at);
+
   const subtotal = Number(order.subtotal ?? order.total) || 0;
   const svc = Number(order.service_charge) || 0;
   const tax = Number(order.tax) || 0;
   const rounding = Number(order.rounding) || 0;
   const total = Number(order.total) || 0;
   const when = new Date().toLocaleString('en-MY');
+  const isReprint = !!order.paid_at;
 
-  const lines = [];
-  lines.push('===================================');
-  lines.push(`         ${settings.shop_name}`);
-  if (settings.shop_name_zh) lines.push(`         ${settings.shop_name_zh}`);
-  if (settings.address) {
-    settings.address.split('\n').forEach((l) => lines.push(`   ${l}`));
-  }
-  lines.push('===================================');
-  lines.push(`Table ${order.table_number}   Order #${order.id}`);
-  lines.push(when);
-  lines.push('-----------------------------------');
+  const lines = [
+    '===================================',
+    `         ${settings.shop_name}`,
+    ...(settings.shop_name_zh ? [`         ${settings.shop_name_zh}`] : []),
+    ...settings.address.split('\n').filter(Boolean).map((l) => `   ${l}`),
+    '===================================',
+    `Table ${order.table_number}   Order #${order.id}`,
+    when,
+    ...(isReprint && job.payload?.reprint ? ['*** REPRINT ***'] : []),
+    '-----------------------------------',
+  ];
   items.forEach((i) => {
     const lineTotal = Number(i.price_at_time) * i.qty;
-    lines.push(
-      `${i.qty}x ${i.name_snapshot.padEnd(20)} RM ${lineTotal.toFixed(2)}`
-    );
+    lines.push(`${i.qty}x ${i.name_snapshot.padEnd(20)} RM ${lineTotal.toFixed(2)}`);
     if (i.name_zh_snapshot) lines.push(`     ${i.name_zh_snapshot}`);
   });
   lines.push('-----------------------------------');
   lines.push(`Subtotal:              RM ${subtotal.toFixed(2)}`);
-  if (svc > 0) {
-    lines.push(`Service ${settings.service_charge_pct}%:          RM ${svc.toFixed(2)}`);
-  }
-  if (tax > 0) {
-    lines.push(`SST ${settings.sst_pct}%:              RM ${tax.toFixed(2)}`);
-  }
-  if (rounding !== 0) {
-    lines.push(`Rounding:              RM ${rounding.toFixed(2)}`);
-  }
+  if (svc > 0) lines.push(`Service ${settings.service_charge_pct}%:          RM ${svc.toFixed(2)}`);
+  if (tax > 0) lines.push(`SST ${settings.sst_pct}%:              RM ${tax.toFixed(2)}`);
+  if (rounding !== 0) lines.push(`Rounding:              RM ${rounding.toFixed(2)}`);
   lines.push(`TOTAL:                 RM ${total.toFixed(2)}`);
   lines.push(`Method: ${order.payment_method || 'cash'}`);
   lines.push('===================================');
   lines.push('       Thank you — 多謝');
   lines.push('===================================');
-  const output = lines.join('\n');
 
   if (!PRINTER_IP) {
-    console.log('\n🧾 RECEIPT (would print):\n' + output + '\n');
+    console.log('\n🧾 RECEIPT (would print):\n' + lines.join('\n') + '\n');
     return;
   }
 
-  try {
-    const printer = new ThermalPrinter({
-      type: PrinterTypes.EPSON,
-      interface: `tcp://${PRINTER_IP}`,
-    });
-    printer.alignCenter();
+  const printer = newPrinter();
+  printer.alignCenter();
+  printer.bold(true);
+  printer.println(settings.shop_name);
+  printer.bold(false);
+  if (settings.shop_name_zh) printer.println(settings.shop_name_zh);
+  settings.address.split('\n').filter(Boolean).forEach((l) => printer.println(l));
+  printer.println(`Table ${order.table_number} — Order #${order.id}`);
+  printer.println(when);
+  if (isReprint && job.payload?.reprint) {
     printer.bold(true);
-    printer.println(settings.shop_name);
+    printer.println('*** REPRINT ***');
     printer.bold(false);
-    if (settings.shop_name_zh) printer.println(settings.shop_name_zh);
-    if (settings.address) {
-      settings.address.split('\n').forEach((l) => printer.println(l));
-    }
-    printer.println(`Table ${order.table_number} — Order #${order.id}`);
-    printer.println(when);
-    printer.drawLine();
-    printer.alignLeft();
-    items.forEach((i) => {
-      const lineTotal = Number(i.price_at_time) * i.qty;
-      printer.tableCustom([
-        { text: `${i.qty}x ${i.name_snapshot}`, width: 0.7 },
-        { text: `RM ${lineTotal.toFixed(2)}`, width: 0.3, align: 'RIGHT' },
-      ]);
-      if (i.name_zh_snapshot) {
-        printer.println(`   ${i.name_zh_snapshot}`);
-      }
-    });
-    printer.drawLine();
-    row(printer, 'Subtotal', subtotal);
-    if (svc > 0) row(printer, `Service ${settings.service_charge_pct}%`, svc);
-    if (tax > 0) row(printer, `SST ${settings.sst_pct}%`, tax);
-    if (rounding !== 0) row(printer, 'Rounding', rounding);
-    printer.bold(true);
-    row(printer, 'TOTAL', total);
-    printer.bold(false);
-    printer.println(`Method: ${order.payment_method || 'cash'}`);
-    printer.drawLine();
-    printer.alignCenter();
-    printer.println('Thank you — 多謝');
-    printer.cut();
-    await printer.execute();
-    console.log(`🖨️  Receipt printed for order #${order.id}`);
-  } catch (err) {
-    console.error('❌ Receipt print failed:', err.message);
   }
+  printer.drawLine();
+  printer.alignLeft();
+  items.forEach((i) => {
+    const lineTotal = Number(i.price_at_time) * i.qty;
+    printer.tableCustom([
+      { text: `${i.qty}x ${i.name_snapshot}`, width: 0.7 },
+      { text: `RM ${lineTotal.toFixed(2)}`, width: 0.3, align: 'RIGHT' },
+    ]);
+    if (i.name_zh_snapshot) printer.println(`   ${i.name_zh_snapshot}`);
+  });
+  printer.drawLine();
+  row(printer, 'Subtotal', subtotal);
+  if (svc > 0) row(printer, `Service ${settings.service_charge_pct}%`, svc);
+  if (tax > 0) row(printer, `SST ${settings.sst_pct}%`, tax);
+  if (rounding !== 0) row(printer, 'Rounding', rounding);
+  printer.bold(true);
+  row(printer, 'TOTAL', total);
+  printer.bold(false);
+  printer.println(`Method: ${order.payment_method || 'cash'}`);
+  printer.drawLine();
+  printer.alignCenter();
+  printer.println('Thank you — 多謝');
+  printer.cut();
+  await printer.execute();
+  console.log(`🖨️  Receipt printed for order #${order.id}${isReprint ? ' (reprint)' : ''}`);
+}
+
+// --- VOID NOTICE -----------------------------------------------------------
+async function handleVoid(job) {
+  const itemId = job.payload?.item_id;
+  if (!itemId) return;
+  const { data: item } = await supabase.from('order_items').select('*').eq('id', itemId).single();
+  if (!item) return;
+
+  const reason = job.payload?.reason || 'no reason given';
+  const time = new Date().toLocaleTimeString('en-MY');
+  const lines = [
+    '###################################',
+    '            *** VOID ***',
+    '###################################',
+    time,
+    `Table ${item.order_id ? '' : ''}Order #${item.order_id}`,
+    `${item.qty}x  ${item.name_snapshot}`,
+    ...(item.name_zh_snapshot ? [`     ${item.name_zh_snapshot}`] : []),
+    `Reason: ${reason}`,
+    '###################################',
+  ];
+
+  if (!PRINTER_IP) {
+    console.log('\n🚫 VOID (would print):\n' + lines.join('\n') + '\n');
+    return;
+  }
+
+  const printer = newPrinter();
+  printer.alignCenter();
+  printer.bold(true);
+  printer.setTextSize(1, 1);
+  printer.println('*** VOID ***');
+  printer.setTextNormal();
+  printer.bold(false);
+  printer.println(time);
+  printer.println(`Order #${item.order_id}`);
+  printer.drawLine();
+  printer.println(`${item.qty}x  ${item.name_snapshot}`);
+  if (item.name_zh_snapshot) printer.println(`     ${item.name_zh_snapshot}`);
+  printer.println(`Reason: ${reason}`);
+  printer.cut();
+  await printer.execute();
+  console.log(`🚫 VOID ticket printed for item #${item.id}`);
 }
 
 function row(printer, label, value) {
@@ -257,9 +270,19 @@ function row(printer, label, value) {
   ]);
 }
 
-// --------------------------------------------------------------------------
-// Boot
-// --------------------------------------------------------------------------
+// --- catch-up: print any jobs missed while the service was offline --------
+async function catchUp() {
+  const { data: pending } = await supabase
+    .from('print_jobs')
+    .select('*')
+    .is('printed_at', null)
+    .order('created_at');
+  if (!pending || pending.length === 0) return;
+  console.log(`⏳ Catching up ${pending.length} pending print job(s)…`);
+  for (const job of pending) await processJob(job);
+}
+
+// --- boot ------------------------------------------------------------------
 async function main() {
   await refreshSettings();
 
@@ -271,44 +294,26 @@ async function main() {
       : '   No PRINTER_IP set — tickets will be logged to console only'
   );
 
+  await catchUp();
+
   supabase
-    .channel('printer-orders')
-    // Kitchen ticket: any new item lands → schedule a batched print
+    .channel('printer-jobs')
     .on(
       'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'order_items' },
+      { event: 'INSERT', schema: 'public', table: 'print_jobs' },
       (payload) => {
-        const row = payload.new;
-        if (row && row.order_id != null) {
-          scheduleKitchenPrint(row.order_id, row.id);
-        }
+        processJob(payload.new).catch((e) =>
+          console.error('processJob failed:', e.message)
+        );
       }
     )
-    // Receipt: order becomes paid
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'orders',
-        filter: 'status=eq.paid',
-      },
-      async (payload) => {
-        const orderId = payload.new.id;
-        const { order, items } = await fetchOrderWithItems(orderId);
-        if (order) await printReceipt(order, items);
-      }
-    )
-    // Live settings updates (shop name, tax %, rounding)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'shop_settings' },
       () => refreshSettings()
     )
     .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('✅ Subscribed. Waiting for orders…\n');
-      }
+      if (status === 'SUBSCRIBED') console.log('✅ Subscribed. Waiting for print jobs…\n');
     });
 }
 

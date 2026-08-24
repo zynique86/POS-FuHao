@@ -16,10 +16,7 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       setError(error.message);
@@ -32,13 +29,16 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-amber-50 flex items-center justify-center p-4">
+    <main className="min-h-screen bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center p-4">
       <form
         onSubmit={onSubmit}
-        className="bg-white rounded-lg shadow-sm border border-amber-100 p-8 max-w-sm w-full"
+        className="bg-white rounded-2xl shadow-lg border border-amber-100 p-8 max-w-sm w-full"
       >
-        <h1 className="text-3xl font-bold text-red-800 mb-1">🥟 Dim Sum POS</h1>
-        <p className="text-stone-500 text-sm mb-6">Staff sign-in</p>
+        <div className="text-center mb-6">
+          <div className="text-5xl mb-2">🥟</div>
+          <h1 className="text-3xl font-bold text-red-800">Dim Sum POS</h1>
+          <p className="text-stone-500 text-sm mt-1">Staff sign-in</p>
+        </div>
 
         <label className="block text-sm text-stone-600 mb-1">Email</label>
         <input
@@ -46,7 +46,8 @@ export default function LoginPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          className="w-full px-3 py-2 border border-stone-300 rounded mb-3"
+          autoComplete="username"
+          className="w-full px-3 py-3 border border-stone-300 rounded-lg mb-3 text-base"
         />
 
         <label className="block text-sm text-stone-600 mb-1">Password</label>
@@ -55,17 +56,20 @@ export default function LoginPage() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          className="w-full px-3 py-2 border border-stone-300 rounded mb-3"
+          autoComplete="current-password"
+          className="w-full px-3 py-3 border border-stone-300 rounded-lg mb-3 text-base"
         />
 
         {error && (
-          <p className="text-red-700 text-sm mb-3 bg-red-50 p-2 rounded">{error}</p>
+          <p className="text-red-700 text-sm mb-3 bg-red-50 p-2 rounded">
+            {error}
+          </p>
         )}
 
         <button
           type="submit"
           disabled={busy}
-          className="w-full bg-red-700 hover:bg-red-800 disabled:bg-stone-300 text-white font-bold py-3 rounded"
+          className="w-full bg-red-700 hover:bg-red-800 disabled:bg-stone-300 text-white font-bold py-3 rounded-lg text-base"
         >
           {busy ? 'Signing in…' : 'Sign In'}
         </button>

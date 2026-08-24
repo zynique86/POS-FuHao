@@ -75,12 +75,18 @@ export default async function AdminPage() {
             })}
           </p>
         </div>
-        <nav className="flex gap-2 text-sm">
+        <nav className="flex flex-wrap gap-2 text-sm">
           <a
             href="/admin/menu"
             className="px-3 py-2 rounded bg-white border border-stone-200 hover:border-red-400 text-stone-700 font-bold"
           >
             🥟 Menu
+          </a>
+          <a
+            href="/admin/z-report"
+            className="px-3 py-2 rounded bg-white border border-stone-200 hover:border-red-400 text-stone-700 font-bold"
+          >
+            📋 Z-Report
           </a>
           <a
             href="/admin/settings"

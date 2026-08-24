@@ -2,14 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-
-type OrderItem = {
-  id: number;
-  order_id: number;
-  name_snapshot: string;
-  qty: number;
-  kitchen_status: string;
-};
+import type { OrderItem } from '@/lib/types';
 
 type Order = {
   id: number;
@@ -22,8 +15,16 @@ type Order = {
 export default function KitchenPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  // A tick that re-renders the whole page every 30s so "time ago"
+  // stays fresh without touching Date.now() during render.
+  const [nowTick, setNowTick] = useState<number>(0);
 
-  // Load open orders + subscribe to changes
+  useEffect(() => {
+    setNowTick(Date.now());
+    const t = setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
   useEffect(() => {
     let mounted = true;
 
@@ -35,18 +36,17 @@ export default function KitchenPage() {
         .order('created_at', { ascending: true });
 
       if (!orderRows) return;
-
       const orderIds = orderRows.map((o) => o.id);
-      const { data: itemRows } = await supabase
-        .from('order_items')
-        .select('*')
-        .in('order_id', orderIds);
-
+      const { data: itemRows } = orderIds.length
+        ? await supabase.from('order_items').select('*').in('order_id', orderIds)
+        : { data: [] as OrderItem[] };
       if (!mounted) return;
 
       const combined: Order[] = orderRows.map((o) => ({
         ...o,
-        items: (itemRows ?? []).filter((i) => i.order_id === o.id),
+        items: ((itemRows ?? []) as OrderItem[])
+          .filter((i) => i.order_id === o.id && !i.voided_at)
+          .sort((a, b) => a.id - b.id),
       }));
       setOrders(combined);
       setLoading(false);
@@ -54,19 +54,10 @@ export default function KitchenPage() {
 
     loadOrders();
 
-    // Realtime: any change to orders or order_items → reload
     const channel = supabase
       .channel('kitchen')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        () => loadOrders()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'order_items' },
-        () => loadOrders()
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => loadOrders())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => loadOrders())
       .subscribe();
 
     return () => {
@@ -76,10 +67,7 @@ export default function KitchenPage() {
   }, []);
 
   async function markItem(itemId: number, newStatus: string) {
-    await supabase
-      .from('order_items')
-      .update({ kitchen_status: newStatus })
-      .eq('id', itemId);
+    await supabase.from('order_items').update({ kitchen_status: newStatus }).eq('id', itemId);
   }
 
   async function closeOrder(orderId: number) {
@@ -87,7 +75,8 @@ export default function KitchenPage() {
   }
 
   function timeAgo(iso: string) {
-    const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+    if (!nowTick) return '';
+    const mins = Math.floor((nowTick - new Date(iso).getTime()) / 60000);
     if (mins < 1) return 'just now';
     if (mins === 1) return '1 min ago';
     return `${mins} mins ago`;
@@ -120,8 +109,7 @@ export default function KitchenPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {orders.map((order) => {
           const allServed =
-            order.items.length > 0 &&
-            order.items.every((i) => i.kitchen_status === 'served');
+            order.items.length > 0 && order.items.every((i) => i.kitchen_status === 'served');
 
           return (
             <div
@@ -139,17 +127,23 @@ export default function KitchenPage() {
                 </span>
               </div>
 
+              {order.items.length === 0 && (
+                <p className="text-sm text-stone-500 italic">
+                  All items voided or served.
+                </p>
+              )}
+
               <ul className="space-y-2 mb-3">
                 {order.items.map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex justify-between items-center"
-                  >
-                    <span className="flex-1">
-                      <span className="font-mono text-amber-400">
-                        {item.qty}x
-                      </span>{' '}
-                      {item.name_snapshot}
+                  <li key={item.id} className="flex justify-between items-center gap-2">
+                    <span className="flex-1 min-w-0">
+                      <span className="font-mono text-amber-400">{item.qty}x</span>{' '}
+                      <span className="font-bold">{item.name_snapshot}</span>
+                      {item.name_zh_snapshot && (
+                        <span className="text-stone-400 block text-sm ml-6">
+                          {item.name_zh_snapshot}
+                        </span>
+                      )}
                     </span>
                     <button
                       onClick={() =>
@@ -162,12 +156,12 @@ export default function KitchenPage() {
                             : 'pending'
                         )
                       }
-                      className={`text-xs px-2 py-1 rounded font-mono uppercase ${
+                      className={`text-xs px-3 py-2 rounded font-mono uppercase font-bold shrink-0 ${
                         item.kitchen_status === 'served'
                           ? 'bg-green-600'
                           : item.kitchen_status === 'cooking'
                           ? 'bg-amber-600'
-                          : 'bg-stone-600'
+                          : 'bg-stone-600 hover:bg-stone-500'
                       }`}
                     >
                       {item.kitchen_status}

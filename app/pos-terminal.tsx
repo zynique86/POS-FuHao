@@ -243,11 +243,24 @@ export default function POSTerminal({
         qty: l.qty,
       }));
 
-      const { error: linesErr } = await supabase.from('order_items').insert(lines);
+      const { data: insertedLines, error: linesErr } = await supabase
+        .from('order_items')
+        .insert(lines)
+        .select('id');
       if (linesErr) {
         alert('Could not add items: ' + linesErr.message);
         setSending(false);
         return;
+      }
+
+      // Enqueue a kitchen print job for exactly the items we just added.
+      const insertedIds = (insertedLines ?? []).map((r) => r.id);
+      if (insertedIds.length > 0) {
+        await supabase.from('print_jobs').insert({
+          order_id: orderId,
+          kind: 'kitchen',
+          payload: { item_ids: insertedIds },
+        });
       }
 
       // If appending, recompute totals from ALL items on the order.

@@ -20,6 +20,9 @@ export type OrderItem = {
   qty: number;
   price_at_time: number;
   kitchen_status: string;
+  voided_at: string | null;
+  void_reason: string | null;
+  voided_by: string | null;
 };
 
 export type OrderStatus = 'open' | 'closed' | 'paid' | 'void';
@@ -50,3 +53,25 @@ export type ShopSettings = {
 };
 
 export type PayMethod = 'cash' | 'duitnow_qr' | 'card';
+
+export type Payment = {
+  id: number;
+  order_id: number;
+  method: PayMethod;
+  amount: number;
+  received: number | null;
+  change_given: number | null;
+  status: string;
+  created_at: string;
+};
+
+export type PrintJobKind = 'kitchen' | 'receipt' | 'void';
+
+export type PrintJob = {
+  id: number;
+  order_id: number | null;
+  kind: PrintJobKind;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+  printed_at: string | null;
+};
