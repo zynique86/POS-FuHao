@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { computeBreakdown, sumLines } from '@/lib/pricing';
-import { useSettings } from '@/lib/settings';
+import { useSettings } from '@/lib/use-settings';
 import type { MenuItem, ShopSettings } from '@/lib/types';
 
 type CartLine = {

@@ -1,10 +1,11 @@
-// Fetch and (optionally) live-subscribe to the singleton shop_settings row.
+// Server-safe settings fetcher — NO React imports here, so this module
+// can be pulled into a React Server Component (app/page.tsx, admin pages).
+// The client-side live hook lives in ./use-settings.ts.
 
-import { useEffect, useState } from 'react';
 import { supabase } from './supabase';
 import type { ShopSettings } from './types';
 
-const FALLBACK: ShopSettings = {
+export const FALLBACK_SETTINGS: ShopSettings = {
   id: 1,
   shop_name: 'DIM SUM SHOP',
   shop_name_zh: '',
@@ -21,31 +22,5 @@ export async function fetchSettings(): Promise<ShopSettings> {
     .select('*')
     .eq('id', 1)
     .single();
-  return (data as ShopSettings) ?? FALLBACK;
-}
-
-// React hook: initial fetch + live updates when admin edits settings.
-export function useSettings(initial?: ShopSettings): ShopSettings {
-  const [settings, setSettings] = useState<ShopSettings>(initial ?? FALLBACK);
-
-  useEffect(() => {
-    if (!initial) {
-      fetchSettings().then(setSettings);
-    }
-    const channel = supabase
-      .channel('shop_settings')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'shop_settings' },
-        (payload) => {
-          if (payload.new) setSettings(payload.new as ShopSettings);
-        }
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [initial]);
-
-  return settings;
+  return (data as ShopSettings) ?? FALLBACK_SETTINGS;
 }
