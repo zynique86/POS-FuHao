@@ -2,26 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import type { Order as BaseOrder, OrderItem, PayMethod } from '@/lib/types';
 
-type OrderItem = {
-  id: number;
-  order_id: number;
-  name_snapshot: string;
-  qty: number;
-  price_at_time: number;
-};
-
-type Order = {
-  id: number;
-  table_number: number;
-  status: string;
-  total: number;
-  created_at: string;
-  paid_at: string | null;
-  items: OrderItem[];
-};
-
-type PayMethod = 'cash' | 'duitnow_qr' | 'card';
+type Order = BaseOrder & { items: OrderItem[] };
 
 export default function CashierPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -46,9 +29,9 @@ export default function CashierPage() {
         ? await supabase.from('order_items').select('*').in('order_id', orderIds)
         : { data: [] };
 
-    const combined: Order[] = orderRows.map((o) => ({
+    const combined: Order[] = (orderRows as BaseOrder[]).map((o) => ({
       ...o,
-      items: (itemRows ?? []).filter((i) => i.order_id === o.id),
+      items: (itemRows ?? []).filter((i) => i.order_id === o.id) as OrderItem[],
     }));
     setOrders(combined);
     setLoading(false);
@@ -61,6 +44,11 @@ export default function CashierPage() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
+        () => loadOrders()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'order_items' },
         () => loadOrders()
       )
       .subscribe();
@@ -87,11 +75,10 @@ export default function CashierPage() {
     if (!activeOrder || !method) return;
     setProcessing(true);
 
-    const receivedNum = method === 'cash' ? Number(received) : activeOrder.total;
+    const receivedNum = method === 'cash' ? Number(received) : Number(activeOrder.total);
     const change =
-      method === 'cash' ? Math.max(0, receivedNum - activeOrder.total) : 0;
+      method === 'cash' ? Math.max(0, receivedNum - Number(activeOrder.total)) : 0;
 
-    // 1. Insert payment record
     const { error: payErr } = await supabase.from('payments').insert({
       order_id: activeOrder.id,
       method,
@@ -107,7 +94,6 @@ export default function CashierPage() {
       return;
     }
 
-    // 2. Mark the order paid
     const { error: orderErr } = await supabase
       .from('orders')
       .update({
@@ -123,7 +109,6 @@ export default function CashierPage() {
       return;
     }
 
-    // 3. Success
     setProcessing(false);
     closePayment();
     loadOrders();
@@ -171,9 +156,12 @@ export default function CashierPage() {
                   <span>
                     <span className="font-mono text-stone-500">{item.qty}x</span>{' '}
                     {item.name_snapshot}
+                    {item.name_zh_snapshot && (
+                      <span className="text-stone-500"> · {item.name_zh_snapshot}</span>
+                    )}
                   </span>
                   <span className="font-mono">
-                    RM {(item.price_at_time * item.qty).toFixed(2)}
+                    RM {(Number(item.price_at_time) * item.qty).toFixed(2)}
                   </span>
                 </li>
               ))}
@@ -203,7 +191,7 @@ export default function CashierPage() {
           onClick={closePayment}
         >
           <div
-            className="bg-white rounded-lg max-w-md w-full p-6"
+            className="bg-white rounded-lg max-w-md w-full p-6 max-h-[95vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-between items-baseline mb-4">
@@ -213,12 +201,27 @@ export default function CashierPage() {
               <button
                 onClick={closePayment}
                 className="text-stone-400 hover:text-stone-700"
+                aria-label="Close"
               >
                 ✕
               </button>
             </div>
 
-            <div className="text-center mb-6">
+            {/* TAX BREAKDOWN */}
+            <div className="mb-4 text-sm space-y-1">
+              <BreakdownRow label="Subtotal" value={Number(activeOrder.subtotal ?? activeOrder.total)} />
+              {Number(activeOrder.service_charge) > 0 && (
+                <BreakdownRow label="Service" value={Number(activeOrder.service_charge)} />
+              )}
+              {Number(activeOrder.tax) > 0 && (
+                <BreakdownRow label="SST" value={Number(activeOrder.tax)} />
+              )}
+              {Number(activeOrder.rounding) !== 0 && (
+                <BreakdownRow label="Rounding" value={Number(activeOrder.rounding)} />
+              )}
+            </div>
+
+            <div className="text-center mb-6 border-t border-b border-stone-100 py-3">
               <p className="text-stone-500 text-sm">Amount due</p>
               <p className="text-4xl font-bold font-mono text-red-700">
                 RM {Number(activeOrder.total).toFixed(2)}
@@ -227,27 +230,9 @@ export default function CashierPage() {
 
             {!method && (
               <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => setMethod('cash')}
-                  className="bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold py-4 rounded-lg"
-                >
-                  💵<br />
-                  <span className="text-sm">Cash</span>
-                </button>
-                <button
-                  onClick={() => setMethod('duitnow_qr')}
-                  className="bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold py-4 rounded-lg"
-                >
-                  📱<br />
-                  <span className="text-sm">DuitNow QR</span>
-                </button>
-                <button
-                  onClick={() => setMethod('card')}
-                  className="bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold py-4 rounded-lg"
-                >
-                  💳<br />
-                  <span className="text-sm">Card</span>
-                </button>
+                <MethodButton onClick={() => setMethod('cash')} emoji="💵" label="Cash" />
+                <MethodButton onClick={() => setMethod('duitnow_qr')} emoji="📱" label="DuitNow QR" />
+                <MethodButton onClick={() => setMethod('card')} emoji="💳" label="Card" />
               </div>
             )}
 
@@ -259,25 +244,27 @@ export default function CashierPage() {
                 </label>
                 <input
                   type="number"
-                  step="0.10"
+                  step="0.05"
                   value={received}
                   onChange={(e) => setReceived(e.target.value)}
-                  placeholder={activeOrder.total.toFixed(2)}
+                  placeholder={Number(activeOrder.total).toFixed(2)}
                   className="w-full px-3 py-3 text-2xl font-mono border-2 border-stone-300 rounded-lg mb-3"
                   autoFocus
                 />
-                {received && Number(received) >= activeOrder.total && (
+                {received && Number(received) >= Number(activeOrder.total) && (
                   <div className="text-center mb-3 p-3 bg-green-50 rounded">
                     <p className="text-sm text-stone-600">Change to return</p>
                     <p className="text-2xl font-bold font-mono text-green-700">
-                      RM {(Number(received) - activeOrder.total).toFixed(2)}
+                      RM {(Number(received) - Number(activeOrder.total)).toFixed(2)}
                     </p>
                   </div>
                 )}
                 <button
                   onClick={confirmPayment}
                   disabled={
-                    processing || !received || Number(received) < activeOrder.total
+                    processing ||
+                    !received ||
+                    Number(received) < Number(activeOrder.total)
                   }
                   className="w-full bg-green-700 hover:bg-green-800 disabled:bg-stone-300 text-white font-bold py-3 rounded-lg"
                 >
@@ -286,14 +273,12 @@ export default function CashierPage() {
               </div>
             )}
 
-            {/* DUITNOW QR FLOW */}
             {method === 'duitnow_qr' && (
               <div className="text-center">
                 <p className="text-sm text-stone-600 mb-2">
                   Show this QR to the customer
                 </p>
                 <div className="bg-white border-4 border-red-700 p-6 rounded-lg inline-block mb-3">
-                  {/* Placeholder QR — swap for real gateway-generated QR later */}
                   <div className="w-48 h-48 bg-[url('data:image/svg+xml;utf8,<svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22><rect%20fill=%22white%22%20width=%2232%22%20height=%2232%22/><g%20fill=%22black%22><rect%20x=%220%22%20y=%220%22%20width=%227%22%20height=%227%22/><rect%20x=%222%22%20y=%222%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%2225%22%20y=%220%22%20width=%227%22%20height=%227%22/><rect%20x=%2227%22%20y=%222%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%220%22%20y=%2225%22%20width=%227%22%20height=%227%22/><rect%20x=%222%22%20y=%2227%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%229%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2213%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2217%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2221%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%229%22%20y=%229%22%20width=%2214%22%20height=%2214%22/><rect%20x=%2211%22%20y=%2211%22%20width=%2210%22%20height=%2210%22%20fill=%22white%22/><rect%20x=%2213%22%20y=%2213%22%20width=%206%22%20height=%206%22/></g></svg>')] bg-contain bg-no-repeat bg-center"></div>
                 </div>
                 <p className="text-xs text-stone-400 mb-4">
@@ -309,7 +294,6 @@ export default function CashierPage() {
               </div>
             )}
 
-            {/* CARD FLOW */}
             {method === 'card' && (
               <div className="text-center">
                 <div className="bg-stone-100 p-6 rounded-lg mb-4">
@@ -344,5 +328,35 @@ export default function CashierPage() {
         </div>
       )}
     </main>
+  );
+}
+
+function BreakdownRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex justify-between text-stone-600">
+      <span>{label}</span>
+      <span className="font-mono">RM {value.toFixed(2)}</span>
+    </div>
+  );
+}
+
+function MethodButton({
+  onClick,
+  emoji,
+  label,
+}: {
+  onClick: () => void;
+  emoji: string;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold py-4 rounded-lg"
+    >
+      {emoji}
+      <br />
+      <span className="text-sm">{label}</span>
+    </button>
   );
 }

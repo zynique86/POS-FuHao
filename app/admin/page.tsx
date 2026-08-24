@@ -63,15 +63,32 @@ export default async function AdminPage() {
 
   return (
     <main className="min-h-screen bg-stone-50 p-4 md:p-8">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold text-stone-800">📊 Dashboard</h1>
-        <p className="text-stone-500 text-sm mt-1">
-          Today · {new Date().toLocaleDateString('en-MY', {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-          })}
-        </p>
+      <header className="mb-8 flex flex-wrap justify-between items-end gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-stone-800">📊 Dashboard</h1>
+          <p className="text-stone-500 text-sm mt-1">
+            Today ·{' '}
+            {new Date().toLocaleDateString('en-MY', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+            })}
+          </p>
+        </div>
+        <nav className="flex gap-2 text-sm">
+          <a
+            href="/admin/menu"
+            className="px-3 py-2 rounded bg-white border border-stone-200 hover:border-red-400 text-stone-700 font-bold"
+          >
+            🥟 Menu
+          </a>
+          <a
+            href="/admin/settings"
+            className="px-3 py-2 rounded bg-white border border-stone-200 hover:border-red-400 text-stone-700 font-bold"
+          >
+            ⚙️ Settings
+          </a>
+        </nav>
       </header>
 
       {/* STAT TILES */}
