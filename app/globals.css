@@ -1,41 +1,139 @@
 @import "tailwindcss";
 
+/* -----------------------------------------------------------------------
+   Design system — "Modern Dim Sum House"
+   Warm crimson × cream × brushed-gold, plus jade for success.
+   All colors are defined once here as CSS variables. Tailwind utilities
+   throughout the app map to these via the `@theme` block below and via
+   arbitrary-value classes like `bg-[var(--brand-600)]` where needed.
+   ----------------------------------------------------------------------- */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Warm crimson — the signature */
+  --brand-50:  #FEF2F2;
+  --brand-100: #FEE2E2;
+  --brand-200: #FECACA;
+  --brand-400: #F87171;
+  --brand-500: #DC2626;
+  --brand-600: #B91C1C;
+  --brand-700: #991B1B;
+  --brand-800: #7F1D1D;
+  --brand-900: #450A0A;
+
+  /* Cream backgrounds */
+  --cream-50:  #FEFCF7;
+  --cream-100: #FBF6EC;
+  --cream-200: #F5EDDC;
+  --cream-300: #EADFC7;
+
+  /* Brushed gold accent */
+  --gold-300: #FCD34D;
+  --gold-400: #FBBF24;
+  --gold-500: #F59E0B;
+  --gold-600: #D97706;
+
+  /* Warm ink for text */
+  --ink-900: #1C1917;
+  --ink-800: #292524;
+  --ink-700: #44403C;
+  --ink-500: #78716C;
+  --ink-400: #A8A29E;
+  --ink-300: #D6D3D1;
+  --ink-200: #E7E5E4;
+  --ink-100: #F5F5F4;
+
+  /* Jade — success */
+  --jade-100: #D1FAE5;
+  --jade-500: #059669;
+  --jade-600: #047857;
+
+  /* Signals */
+  --warn-500: #EA580C;
+
+  /* Radii */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-2xl: 28px;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgb(28 25 23 / 0.05);
+  --shadow-md: 0 6px 20px -6px rgb(28 25 23 / 0.10), 0 2px 6px -2px rgb(28 25 23 / 0.06);
+  --shadow-lg: 0 18px 40px -12px rgb(28 25 23 / 0.14), 0 6px 12px -4px rgb(28 25 23 / 0.08);
+  --shadow-brand: 0 12px 32px -8px rgb(185 28 28 / 0.30);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--cream-50);
+  --color-foreground: var(--ink-900);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+html, body {
+  background: var(--cream-50);
+  color: var(--ink-900);
+  font-family: var(--font-geist-sans), Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
 }
 
-/* Fatter minimum touch targets on tablets/phones. */
+/* A subtle warm paper texture (procedural, no image) for a bit of soul. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, rgb(251 191 36 / 0.10), transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, rgb(220 38 38 / 0.06), transparent 60%);
+}
+
+/* Tablet-friendly touch targets */
 @media (pointer: coarse) {
-  button,
-  [role='button'] {
+  button, [role='button'], input, select {
     min-height: 44px;
   }
 }
 
-/* Clean print output for Z-report. */
-@media print {
-  header nav,
-  header button,
-  .no-print {
-    display: none !important;
-  }
-  body {
-    background: white !important;
-  }
+/* Focus ring — warm crimson */
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid var(--brand-500);
+  outline-offset: 2px;
+  border-radius: 10px;
 }
+
+/* Warm scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--ink-200);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--ink-300); background-clip: content-box; }
+
+/* Print — Z-report */
+@media print {
+  header nav, header button, .no-print { display: none !important; }
+  body { background: white !important; }
+  body::before { display: none !important; }
+}
+
+/* Gentle rise-in for modals */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-rise { animation: rise 180ms var(--ease-out) both; }
+
+/* Card float on hover */
+.card-hover { transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out), border-color 200ms var(--ease-out); }
+.card-hover:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }

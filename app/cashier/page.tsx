@@ -1,6 +1,6 @@
 'use client';
 
-// Cashier — takes payments, splits bills, voids items, reprints receipts.
+// Cashier — redesigned. Voids, reprints, split bills, payment flows.
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -74,8 +74,6 @@ export default function CashierPage() {
     };
   }, []);
 
-  if (loading) return <Shell>Loading…</Shell>;
-
   const activeOrder =
     screen.kind === 'closed'
       ? null
@@ -84,39 +82,59 @@ export default function CashierPage() {
         null;
 
   return (
-    <main className="min-h-screen bg-stone-50 p-4 md:p-6">
-      <header className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-stone-800">💰 Cashier</h1>
-        <span className="text-stone-500 text-sm">
-          {orders.length} unpaid · {paidToday.length} paid today
-        </span>
+    <main className="min-h-[calc(100vh-56px)] max-w-[1600px] mx-auto px-4 md:px-6 py-6">
+      <header className="flex flex-wrap items-end justify-between gap-3 mb-6">
+        <div>
+          <p className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]">
+            Cashier · 收銀
+          </p>
+          <h1 className="text-3xl md:text-4xl font-bold text-[var(--ink-900)] mt-1">
+            Take Payment
+          </h1>
+        </div>
+        <div className="flex items-center gap-4 text-sm">
+          <StatChip label="Unpaid" value={orders.length} accent />
+          <StatChip label="Paid today" value={paidToday.length} />
+        </div>
       </header>
 
-      {orders.length === 0 && (
-        <div className="text-center text-stone-400 mt-20 mb-10">
-          <p className="text-xl">No unpaid orders</p>
-        </div>
-      )}
-
-      {orders.length > 0 && (
+      {loading ? (
+        <p className="text-[var(--ink-500)]">Loading…</p>
+      ) : (
         <>
-          <h2 className="text-sm uppercase tracking-wider text-stone-500 mb-2">Unpaid</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
-            {orders.map((o) => (
-              <UnpaidCard key={o.id} order={o} onOpen={() => setScreen({ kind: 'menu', orderId: o.id })} />
-            ))}
-          </div>
-        </>
-      )}
+          {orders.length === 0 && paidToday.length === 0 && (
+            <EmptyState />
+          )}
 
-      {paidToday.length > 0 && (
-        <>
-          <h2 className="text-sm uppercase tracking-wider text-stone-500 mb-2">Paid today</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {paidToday.map((o) => (
-              <PaidChip key={o.id} order={o} onOpen={() => setScreen({ kind: 'menu', orderId: o.id })} />
-            ))}
-          </div>
+          {orders.length > 0 && (
+            <section className="mb-10">
+              <SectionHead label="Unpaid orders" count={orders.length} />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {orders.map((o) => (
+                  <UnpaidCard
+                    key={o.id}
+                    order={o}
+                    onOpen={() => setScreen({ kind: 'menu', orderId: o.id })}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {paidToday.length > 0 && (
+            <section>
+              <SectionHead label="Paid today" count={paidToday.length} />
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+                {paidToday.map((o) => (
+                  <PaidChip
+                    key={o.id}
+                    order={o}
+                    onOpen={() => setScreen({ kind: 'menu', orderId: o.id })}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
         </>
       )}
 
@@ -174,32 +192,75 @@ export default function CashierPage() {
   );
 }
 
-// ─── list cards ───────────────────────────────────────────────────────────
+// ─── small pieces ─────────────────────────────────────────────────────────
+
+function StatChip({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
+  return (
+    <div
+      className={`px-3 py-2 rounded-2xl ${accent ? 'text-white' : 'bg-white text-[var(--ink-800)] border border-[var(--ink-200)]'}`}
+      style={accent ? { background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))', boxShadow: 'var(--shadow-brand)' } : undefined}
+    >
+      <p className={`text-[10px] uppercase tracking-widest ${accent ? 'text-white/70' : 'text-[var(--ink-500)]'}`}>{label}</p>
+      <p className="text-lg font-bold font-mono leading-tight">{value}</p>
+    </div>
+  );
+}
+
+function SectionHead({ label, count }: { label: string; count: number }) {
+  return (
+    <div className="flex items-baseline justify-between mb-3">
+      <h2 className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold">
+        {label}
+      </h2>
+      <span className="text-xs text-[var(--ink-400)]">{count}</span>
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="text-center py-20">
+      <div className="text-6xl mb-3 opacity-40">🫖</div>
+      <p className="text-lg text-[var(--ink-700)] font-semibold">All caught up</p>
+      <p className="text-sm text-[var(--ink-500)] mt-1">
+        New unpaid orders will appear here automatically.
+      </p>
+    </div>
+  );
+}
+
+// ─── unpaid card ──────────────────────────────────────────────────────────
 
 function UnpaidCard({ order, onOpen }: { order: Order; onOpen: () => void }) {
+  const active = order.items.filter((i) => !i.voided_at);
   const paidSoFar = order.payments.reduce((s, p) => s + Number(p.amount), 0);
   const remaining = Math.max(0, Number(order.total) - paidSoFar);
   const partial = paidSoFar > 0 && remaining > 0;
-  const active = order.items.filter((i) => !i.voided_at);
   return (
     <button
       onClick={onOpen}
-      className="text-left bg-white rounded-lg p-4 shadow-sm border border-stone-200 hover:border-red-400 transition"
+      className="card-hover text-left bg-white rounded-2xl p-5 border border-[var(--ink-200)] w-full"
+      style={{ boxShadow: 'var(--shadow-sm)' }}
     >
-      <div className="flex justify-between items-baseline mb-3">
-        <h3 className="text-xl font-bold text-stone-800">Table {order.table_number}</h3>
-        <span className="text-xs text-stone-400 font-mono">#{order.id}</span>
+      <div className="flex items-baseline justify-between mb-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-[var(--ink-500)]">Table</p>
+          <p className="text-2xl font-bold text-[var(--ink-900)]">{order.table_number}</p>
+        </div>
+        <span className="text-[10px] text-[var(--ink-400)] font-mono">#{order.id}</span>
       </div>
-      <p className="text-sm text-stone-500 mb-3">
+      <p className="text-xs text-[var(--ink-500)] mb-3">
         {active.length} item{active.length === 1 ? '' : 's'}
       </p>
-      <div className="flex justify-between font-bold border-t border-stone-100 pt-2">
-        <span>{partial ? 'Remaining' : 'Total'}</span>
-        <span className="font-mono text-red-700">RM {(partial ? remaining : Number(order.total)).toFixed(2)}</span>
+      <div className="flex items-baseline justify-between border-t border-[var(--ink-100)] pt-3">
+        <span className="text-sm text-[var(--ink-500)]">{partial ? 'Remaining' : 'Total'}</span>
+        <span className="text-xl font-mono font-bold text-[var(--brand-700)]">
+          RM {(partial ? remaining : Number(order.total)).toFixed(2)}
+        </span>
       </div>
       {partial && (
-        <p className="text-xs text-amber-600 mt-1">
-          RM {paidSoFar.toFixed(2)} paid — split in progress
+        <p className="mt-2 text-[10px] text-[var(--gold-600)] font-semibold uppercase tracking-wider">
+          Split in progress · RM {paidSoFar.toFixed(2)} paid
         </p>
       )}
     </button>
@@ -210,18 +271,21 @@ function PaidChip({ order, onOpen }: { order: Order; onOpen: () => void }) {
   return (
     <button
       onClick={onOpen}
-      className="text-left bg-white rounded-lg px-3 py-2 border border-stone-200 hover:border-red-400 transition"
+      className="card-hover text-left bg-white rounded-xl px-3 py-2.5 border border-[var(--ink-200)]"
+      style={{ boxShadow: 'var(--shadow-sm)' }}
     >
-      <div className="flex justify-between items-baseline">
-        <span className="font-bold text-stone-700 text-sm">T{order.table_number}</span>
-        <span className="text-[10px] text-stone-400 font-mono">#{order.id}</span>
+      <div className="flex items-baseline justify-between">
+        <span className="font-bold text-[var(--ink-800)] text-sm">T{order.table_number}</span>
+        <span className="text-[10px] text-[var(--ink-400)] font-mono">#{order.id}</span>
       </div>
-      <div className="font-mono text-xs text-red-700 mt-0.5">RM {Number(order.total).toFixed(2)}</div>
+      <div className="font-mono text-xs text-[var(--brand-700)] font-bold mt-1">
+        RM {Number(order.total).toFixed(2)}
+      </div>
     </button>
   );
 }
 
-// ─── order menu ───────────────────────────────────────────────────────────
+// ─── order menu modal ─────────────────────────────────────────────────────
 
 function OrderMenuModal({
   order,
@@ -244,22 +308,21 @@ function OrderMenuModal({
 
   return (
     <ModalShell onClose={onClose} title={`Table ${order.table_number}`} sub={`Order #${order.id}`}>
-      {/* line items */}
-      <ul className="space-y-1 mb-4 text-sm">
+      <ul className="space-y-1 mb-4 text-sm max-h-64 overflow-y-auto -mx-1 px-1">
         {order.items.map((i) => {
           const voided = !!i.voided_at;
           return (
             <li
               key={i.id}
-              className={`flex items-center justify-between gap-2 py-1 ${
-                voided ? 'text-stone-400 line-through' : 'text-stone-700'
+              className={`flex items-center justify-between gap-2 py-1.5 ${
+                voided ? 'text-[var(--ink-400)] line-through' : 'text-[var(--ink-800)]'
               }`}
             >
               <span className="flex-1 min-w-0 truncate">
-                <span className="font-mono text-stone-500">{i.qty}x</span>{' '}
+                <span className="font-mono text-[var(--ink-400)]">{i.qty}×</span>{' '}
                 {i.name_snapshot}
                 {i.name_zh_snapshot && (
-                  <span className="text-stone-500"> · {i.name_zh_snapshot}</span>
+                  <span className="text-[var(--ink-400)]"> · {i.name_zh_snapshot}</span>
                 )}
               </span>
               <span className="font-mono w-20 text-right">
@@ -268,7 +331,7 @@ function OrderMenuModal({
               {!isPaid && !voided && (
                 <button
                   onClick={() => onVoidItem(i.id)}
-                  className="text-xs px-2 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100 font-bold shrink-0"
+                  className="text-[10px] px-2 py-1 rounded-lg bg-[var(--brand-50)] text-[var(--brand-700)] hover:bg-[var(--brand-100)] font-bold uppercase tracking-wider shrink-0"
                 >
                   Void
                 </button>
@@ -278,24 +341,23 @@ function OrderMenuModal({
         })}
       </ul>
 
-      {/* breakdown */}
-      <div className="text-sm space-y-1 border-t border-stone-100 pt-3 mb-4">
+      <div className="text-sm space-y-1 border-t border-[var(--ink-100)] pt-4 mb-4">
         <BRow label="Subtotal" value={Number(order.subtotal ?? order.total)} />
         {Number(order.service_charge) > 0 && (
           <BRow label="Service" value={Number(order.service_charge)} />
         )}
         {Number(order.tax) > 0 && <BRow label="SST" value={Number(order.tax)} />}
-        {Number(order.rounding) !== 0 && (
-          <BRow label="Rounding" value={Number(order.rounding)} />
-        )}
-        <div className="flex justify-between font-bold text-lg text-stone-800 pt-1 border-t border-stone-100">
+        {Number(order.rounding) !== 0 && <BRow label="Rounding" value={Number(order.rounding)} />}
+        <div className="flex justify-between text-lg font-bold text-[var(--ink-900)] pt-2 border-t border-[var(--ink-100)]">
           <span>Total</span>
-          <span className="font-mono text-red-700">RM {Number(order.total).toFixed(2)}</span>
+          <span className="font-mono text-[var(--brand-700)]">
+            RM {Number(order.total).toFixed(2)}
+          </span>
         </div>
         {paidSoFar > 0 && !isPaid && (
           <>
             <BRow label="Paid so far" value={paidSoFar} />
-            <div className="flex justify-between font-bold text-amber-700">
+            <div className="flex justify-between text-[var(--gold-600)] font-bold">
               <span>Remaining</span>
               <span className="font-mono">RM {remaining.toFixed(2)}</span>
             </div>
@@ -303,42 +365,20 @@ function OrderMenuModal({
         )}
       </div>
 
-      {/* actions */}
       {!isPaid ? (
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() => onPayFull(remaining)}
-            className="col-span-2 bg-red-700 hover:bg-red-800 text-white font-bold py-3 rounded-lg"
-          >
+        <div className="space-y-2">
+          <PrimaryBtn onClick={() => onPayFull(remaining)}>
             Pay RM {remaining.toFixed(2)}
-          </button>
-          <button
-            onClick={onSplit}
-            className="bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold py-3 rounded-lg"
-          >
-            Split bill
-          </button>
-          <button
-            onClick={onClose}
-            className="bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold py-3 rounded-lg"
-          >
-            Close
-          </button>
+          </PrimaryBtn>
+          <div className="grid grid-cols-2 gap-2">
+            <SecondaryBtn onClick={onSplit}>Split bill</SecondaryBtn>
+            <SecondaryBtn onClick={onClose}>Close</SecondaryBtn>
+          </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={onReprint}
-            className="col-span-2 bg-red-700 hover:bg-red-800 text-white font-bold py-3 rounded-lg"
-          >
-            🖨️ Reprint receipt
-          </button>
-          <button
-            onClick={onClose}
-            className="col-span-2 bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold py-3 rounded-lg"
-          >
-            Close
-          </button>
+        <div className="space-y-2">
+          <PrimaryBtn onClick={onReprint}>🖨️ Reprint receipt</PrimaryBtn>
+          <SecondaryBtn onClick={onClose}>Close</SecondaryBtn>
         </div>
       )}
     </ModalShell>
@@ -384,7 +424,6 @@ function PayModal({
       return;
     }
 
-    // Fetch fresh payments to see if the order is now fully paid.
     const { data: allPays } = await supabase.from('payments').select('amount').eq('order_id', order.id);
     const paidNow = (allPays ?? []).reduce((s, p) => s + Number(p.amount), 0);
 
@@ -402,7 +441,6 @@ function PayModal({
         setBusy(false);
         return;
       }
-      // Enqueue receipt print for the fully-paid order.
       await supabase.from('print_jobs').insert({
         order_id: order.id,
         kind: 'receipt',
@@ -415,95 +453,95 @@ function PayModal({
   }
 
   return (
-    <ModalShell
-      onClose={onCancel}
-      title={`Table ${order.table_number}`}
-      sub={label ? label : `Order #${order.id}`}
-    >
-      <div className="text-center mb-6 border-y border-stone-100 py-4">
-        <p className="text-stone-500 text-sm">Amount due</p>
-        <p className="text-4xl font-bold font-mono text-red-700">RM {amount.toFixed(2)}</p>
+    <ModalShell onClose={onCancel} title={`Table ${order.table_number}`} sub={label ? label : `Order #${order.id}`}>
+      <div className="text-center mb-6 py-5 rounded-2xl"
+           style={{ background: 'linear-gradient(135deg, var(--brand-50), var(--cream-100))' }}>
+        <p className="text-xs uppercase tracking-widest text-[var(--ink-500)]">Amount due</p>
+        <p className="text-5xl font-bold font-mono text-[var(--brand-700)] mt-1">
+          RM {amount.toFixed(2)}
+        </p>
       </div>
 
       {!method && (
         <div className="grid grid-cols-3 gap-2">
           <MethodBtn onClick={() => setMethod('cash')} emoji="💵" label="Cash" />
-          <MethodBtn onClick={() => setMethod('duitnow_qr')} emoji="📱" label="DuitNow QR" />
+          <MethodBtn onClick={() => setMethod('duitnow_qr')} emoji="📱" label="DuitNow" />
           <MethodBtn onClick={() => setMethod('card')} emoji="💳" label="Card" />
         </div>
       )}
 
       {method === 'cash' && (
         <div>
-          <label className="block text-sm text-stone-600 mb-1">Cash received (RM)</label>
+          <label className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-2 font-semibold">
+            Cash received
+          </label>
           <input
             type="number"
             step="0.05"
             value={received}
             onChange={(e) => setReceived(e.target.value)}
             placeholder={amount.toFixed(2)}
-            className="w-full px-3 py-3 text-2xl font-mono border-2 border-stone-300 rounded-lg mb-3"
+            className="w-full px-4 py-4 text-3xl font-mono border-2 border-[var(--ink-200)] rounded-2xl mb-3 focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
             autoFocus
           />
           {received && Number(received) >= amount && (
-            <div className="text-center mb-3 p-3 bg-green-50 rounded">
-              <p className="text-sm text-stone-600">Change to return</p>
-              <p className="text-2xl font-bold font-mono text-green-700">
+            <div className="text-center mb-3 p-4 rounded-2xl bg-[var(--jade-100)]">
+              <p className="text-xs uppercase tracking-widest text-[var(--jade-600)] font-semibold">
+                Change to return
+              </p>
+              <p className="text-3xl font-bold font-mono text-[var(--jade-600)] mt-1">
                 RM {(Number(received) - amount).toFixed(2)}
               </p>
             </div>
           )}
-          <button
-            onClick={confirm}
-            disabled={busy || !received || Number(received) < amount}
-            className="w-full bg-green-700 hover:bg-green-800 disabled:bg-stone-300 text-white font-bold py-3 rounded-lg"
-          >
-            {busy ? 'Recording…' : 'Confirm Cash Payment'}
-          </button>
+          <ConfirmBtn onClick={confirm} disabled={busy || !received || Number(received) < amount} busy={busy}>
+            Confirm Cash Payment
+          </ConfirmBtn>
         </div>
       )}
 
       {method === 'duitnow_qr' && (
         <div className="text-center">
-          <p className="text-sm text-stone-600 mb-2">Show this QR to the customer</p>
-          <div className="bg-white border-4 border-red-700 p-6 rounded-lg inline-block mb-3">
-            <div className="w-48 h-48 bg-[url('data:image/svg+xml;utf8,<svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22><rect%20fill=%22white%22%20width=%2232%22%20height=%2232%22/><g%20fill=%22black%22><rect%20x=%220%22%20y=%220%22%20width=%227%22%20height=%227%22/><rect%20x=%222%22%20y=%222%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%2225%22%20y=%220%22%20width=%227%22%20height=%227%22/><rect%20x=%2227%22%20y=%222%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%220%22%20y=%2225%22%20width=%227%22%20height=%227%22/><rect%20x=%222%22%20y=%2227%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%229%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2213%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2217%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2221%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%229%22%20y=%229%22%20width=%2214%22%20height=%2214%22/><rect%20x=%2211%22%20y=%2211%22%20width=%2210%22%20height=%2210%22%20fill=%22white%22/><rect%20x=%2213%22%20y=%2213%22%20width=%206%22%20height=%206%22/></g></svg>')] bg-contain bg-no-repeat bg-center"></div>
+          <p className="text-sm text-[var(--ink-500)] mb-3">Show this QR to the customer</p>
+          <div className="inline-block p-5 rounded-2xl mb-3"
+               style={{ background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))' }}>
+            <div className="w-48 h-48 bg-white rounded-xl p-3">
+              <div className="w-full h-full bg-[url('data:image/svg+xml;utf8,<svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22><rect%20fill=%22white%22%20width=%2232%22%20height=%2232%22/><g%20fill=%22black%22><rect%20x=%220%22%20y=%220%22%20width=%227%22%20height=%227%22/><rect%20x=%222%22%20y=%222%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%2225%22%20y=%220%22%20width=%227%22%20height=%227%22/><rect%20x=%2227%22%20y=%222%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%220%22%20y=%2225%22%20width=%227%22%20height=%227%22/><rect%20x=%222%22%20y=%2227%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%229%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2213%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2217%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2221%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%229%22%20y=%229%22%20width=%2214%22%20height=%2214%22/><rect%20x=%2211%22%20y=%2211%22%20width=%2210%22%20height=%2210%22%20fill=%22white%22/><rect%20x=%2213%22%20y=%2213%22%20width=%206%22%20height=%206%22/></g></svg>')] bg-contain bg-no-repeat bg-center" />
+            </div>
           </div>
-          <p className="text-xs text-stone-400 mb-4">
+          <p className="text-xs text-[var(--ink-400)] mb-4">
             Placeholder QR — connect Fiuu/iPay88 later for real DuitNow QR
           </p>
-          <button
-            onClick={confirm}
-            disabled={busy}
-            className="w-full bg-green-700 hover:bg-green-800 disabled:bg-stone-300 text-white font-bold py-3 rounded-lg"
-          >
-            {busy ? 'Recording…' : 'Customer Paid — Confirm'}
-          </button>
+          <ConfirmBtn onClick={confirm} disabled={busy} busy={busy}>
+            Customer Paid — Confirm
+          </ConfirmBtn>
         </div>
       )}
 
       {method === 'card' && (
         <div className="text-center">
-          <div className="bg-stone-100 p-6 rounded-lg mb-4">
-            <p className="text-sm text-stone-600 mb-2">On your card terminal:</p>
-            <p className="text-lg font-bold">Charge</p>
-            <p className="text-3xl font-mono text-red-700">RM {amount.toFixed(2)}</p>
+          <div className="bg-[var(--cream-100)] rounded-2xl p-6 mb-4">
+            <p className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold">
+              On your card terminal
+            </p>
+            <p className="text-sm text-[var(--ink-700)] font-semibold mt-2">Charge</p>
+            <p className="text-3xl font-mono font-bold text-[var(--brand-700)] mt-1">
+              RM {amount.toFixed(2)}
+            </p>
           </div>
-          <p className="text-xs text-stone-400 mb-4">Once the card is approved on the EDC, press below</p>
-          <button
-            onClick={confirm}
-            disabled={busy}
-            className="w-full bg-green-700 hover:bg-green-800 disabled:bg-stone-300 text-white font-bold py-3 rounded-lg"
-          >
-            {busy ? 'Recording…' : 'Card Approved — Confirm'}
-          </button>
+          <p className="text-xs text-[var(--ink-400)] mb-4">
+            Once the card is approved on the EDC, press below
+          </p>
+          <ConfirmBtn onClick={confirm} disabled={busy} busy={busy}>
+            Card Approved — Confirm
+          </ConfirmBtn>
         </div>
       )}
 
       {method && (
         <button
           onClick={() => setMethod(null)}
-          className="w-full mt-2 text-stone-500 hover:text-stone-700 text-sm"
+          className="w-full mt-3 text-sm text-[var(--ink-500)] hover:text-[var(--brand-600)] font-semibold"
         >
           ← Change payment method
         </button>
@@ -512,7 +550,7 @@ function PayModal({
   );
 }
 
-// ─── split modal ──────────────────────────────────────────────────────────
+// ─── split ────────────────────────────────────────────────────────────────
 
 function SplitModal({
   order,
@@ -530,54 +568,60 @@ function SplitModal({
 
   return (
     <ModalShell onClose={onCancel} title="Split bill" sub={`Table ${order.table_number}`}>
-      <div className="text-center mb-4">
-        <p className="text-stone-500 text-sm">Remaining to split</p>
-        <p className="text-3xl font-bold font-mono text-red-700">RM {remaining.toFixed(2)}</p>
+      <div className="text-center mb-6 py-4 rounded-2xl"
+           style={{ background: 'linear-gradient(135deg, var(--brand-50), var(--cream-100))' }}>
+        <p className="text-xs uppercase tracking-widest text-[var(--ink-500)]">Remaining to split</p>
+        <p className="text-4xl font-bold font-mono text-[var(--brand-700)] mt-1">
+          RM {remaining.toFixed(2)}
+        </p>
       </div>
 
-      <label className="block text-sm text-stone-600 mb-1">Split into</label>
-      <div className="flex items-center gap-2 mb-4">
+      <label className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-2 font-semibold">
+        Split into
+      </label>
+      <div className="flex items-center gap-3 mb-5 bg-[var(--cream-100)] rounded-2xl p-2">
         <button
           onClick={() => setN(Math.max(2, n - 1))}
-          className="w-10 h-10 rounded bg-stone-100 hover:bg-stone-200 text-xl font-bold"
+          className="w-12 h-12 rounded-xl bg-white border border-[var(--ink-200)] text-xl font-bold hover:border-[var(--brand-400)]"
         >
           −
         </button>
-        <div className="flex-1 text-center text-2xl font-bold font-mono">{n} ways</div>
+        <div className="flex-1 text-center">
+          <span className="text-3xl font-bold font-mono">{n}</span>
+          <span className="text-sm text-[var(--ink-500)] ml-2">ways</span>
+        </div>
         <button
           onClick={() => setN(Math.min(20, n + 1))}
-          className="w-10 h-10 rounded bg-stone-100 hover:bg-stone-200 text-xl font-bold"
+          className="w-12 h-12 rounded-xl bg-white border border-[var(--ink-200)] text-xl font-bold hover:border-[var(--brand-400)]"
         >
           +
         </button>
       </div>
 
-      <div className="bg-amber-50 border border-amber-100 rounded p-3 text-center mb-4">
-        <p className="text-sm text-stone-600">Each person pays</p>
-        <p className="text-2xl font-bold font-mono text-red-700">RM {perHead.toFixed(2)}</p>
+      <div className="bg-[var(--gold-400)]/15 border border-[var(--gold-400)]/40 rounded-2xl p-4 text-center mb-5">
+        <p className="text-xs uppercase tracking-widest text-[var(--ink-500)]">Each person pays</p>
+        <p className="text-3xl font-bold font-mono text-[var(--brand-700)] mt-1">
+          RM {perHead.toFixed(2)}
+        </p>
       </div>
 
-      <p className="text-xs text-stone-500 mb-3">
+      <p className="text-xs text-[var(--ink-500)] mb-4">
         Take payment one at a time. Order closes automatically when the full amount is paid.
       </p>
 
-      <button
-        onClick={() => onPayPart(perHead, `Split ${n} ways — RM ${perHead.toFixed(2)} each`)}
-        className="w-full bg-red-700 hover:bg-red-800 text-white font-bold py-3 rounded-lg mb-2"
+      <PrimaryBtn
+        onClick={() =>
+          onPayPart(perHead, `Split ${n} ways · RM ${perHead.toFixed(2)} each`)
+        }
       >
-        Take one share (RM {perHead.toFixed(2)})
-      </button>
-      <button
-        onClick={onCancel}
-        className="w-full bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold py-2 rounded-lg"
-      >
-        Back
-      </button>
+        Take one share · RM {perHead.toFixed(2)}
+      </PrimaryBtn>
+      <SecondaryBtn onClick={onCancel}>Back</SecondaryBtn>
     </ModalShell>
   );
 }
 
-// ─── void modal ───────────────────────────────────────────────────────────
+// ─── void ─────────────────────────────────────────────────────────────────
 
 function VoidModal({
   order,
@@ -614,7 +658,6 @@ function VoidModal({
       return;
     }
 
-    // Recompute order totals from remaining (non-voided) items.
     const { data: remaining } = await supabase
       .from('order_items')
       .select('qty, price_at_time, voided_at')
@@ -636,7 +679,6 @@ function VoidModal({
       total: b.total,
     }).eq('id', order.id);
 
-    // Kitchen void notice.
     await supabase.from('print_jobs').insert({
       order_id: order.id,
       kind: 'void',
@@ -649,49 +691,36 @@ function VoidModal({
 
   return (
     <ModalShell onClose={onCancel} title="Void item" sub={`Table ${order.table_number}`}>
-      <p className="text-stone-700 mb-3">
-        <span className="font-mono text-stone-500">{item.qty}x</span> {item.name_snapshot}
-        {item.name_zh_snapshot && <span className="text-stone-500"> · {item.name_zh_snapshot}</span>}
-      </p>
+      <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] rounded-2xl p-4 mb-4">
+        <p className="text-[var(--ink-800)]">
+          <span className="font-mono text-[var(--ink-500)]">{item.qty}×</span>{' '}
+          <span className="font-semibold">{item.name_snapshot}</span>
+          {item.name_zh_snapshot && <span className="text-[var(--ink-500)]"> · {item.name_zh_snapshot}</span>}
+        </p>
+      </div>
 
-      <label className="block text-sm text-stone-600 mb-1">Reason (kitchen will see)</label>
+      <label className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-2 font-semibold">
+        Reason (kitchen will see)
+      </label>
       <input
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         placeholder="e.g. wrong order, customer changed mind"
-        className="w-full px-3 py-3 border border-stone-300 rounded mb-4"
+        className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl mb-5 focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
         autoFocus
       />
 
       <div className="grid grid-cols-2 gap-2">
-        <button
-          onClick={onCancel}
-          disabled={busy}
-          className="bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold py-3 rounded-lg"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={confirm}
-          disabled={busy}
-          className="bg-red-700 hover:bg-red-800 disabled:bg-stone-300 text-white font-bold py-3 rounded-lg"
-        >
+        <SecondaryBtn onClick={onCancel} disabled={busy}>Cancel</SecondaryBtn>
+        <PrimaryBtn onClick={confirm} disabled={busy}>
           {busy ? 'Voiding…' : 'Confirm void'}
-        </button>
+        </PrimaryBtn>
       </div>
     </ModalShell>
   );
 }
 
-// ─── shared building blocks ───────────────────────────────────────────────
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <main className="min-h-screen bg-stone-50 p-6">
-      <p>{children}</p>
-    </main>
-  );
-}
+// ─── shared ────────────────────────────────────────────────────────────────
 
 function ModalShell({
   title,
@@ -706,21 +735,22 @@ function ModalShell({
 }) {
   return (
     <div
-      className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"
+      className="fixed inset-0 bg-[var(--ink-900)]/50 backdrop-blur-sm flex items-center justify-center p-4 z-50"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-lg max-w-md w-full p-6 max-h-[95vh] overflow-y-auto"
+        className="bg-white rounded-3xl max-w-md w-full p-6 max-h-[95vh] overflow-y-auto animate-rise"
         onClick={(e) => e.stopPropagation()}
+        style={{ boxShadow: 'var(--shadow-lg)' }}
       >
-        <div className="flex justify-between items-baseline mb-4">
+        <div className="flex justify-between items-baseline mb-5">
           <div>
-            <h2 className="text-2xl font-bold text-stone-800">{title}</h2>
-            {sub && <p className="text-xs text-stone-400 font-mono">{sub}</p>}
+            <h2 className="text-2xl font-bold text-[var(--ink-900)]">{title}</h2>
+            {sub && <p className="text-xs text-[var(--ink-400)] font-mono mt-0.5">{sub}</p>}
           </div>
           <button
             onClick={onClose}
-            className="text-stone-400 hover:text-stone-700 text-xl"
+            className="w-9 h-9 rounded-full bg-[var(--ink-100)] hover:bg-[var(--ink-200)] text-[var(--ink-500)] text-base"
             aria-label="Close"
           >
             ✕
@@ -734,7 +764,7 @@ function ModalShell({
 
 function BRow({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex justify-between text-stone-600">
+    <div className="flex justify-between text-[var(--ink-500)]">
       <span>{label}</span>
       <span className="font-mono">RM {value.toFixed(2)}</span>
     </div>
@@ -745,11 +775,80 @@ function MethodBtn({ onClick, emoji, label }: { onClick: () => void; emoji: stri
   return (
     <button
       onClick={onClick}
-      className="bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold py-4 rounded-lg"
+      className="bg-[var(--cream-100)] hover:bg-[var(--cream-200)] text-[var(--ink-800)] font-semibold py-5 rounded-2xl transition"
     >
-      {emoji}
-      <br />
-      <span className="text-sm">{label}</span>
+      <div className="text-2xl mb-1">{emoji}</div>
+      <div className="text-xs">{label}</div>
+    </button>
+  );
+}
+
+function PrimaryBtn({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="w-full text-white font-bold py-3.5 rounded-2xl transition disabled:opacity-60"
+      style={{
+        background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
+        boxShadow: 'var(--shadow-brand)',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SecondaryBtn({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="w-full bg-[var(--cream-100)] hover:bg-[var(--cream-200)] text-[var(--ink-800)] font-bold py-3 rounded-2xl transition disabled:opacity-60"
+    >
+      {children}
+    </button>
+  );
+}
+
+function ConfirmBtn({
+  children,
+  onClick,
+  disabled,
+  busy,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  busy?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="w-full text-white font-bold py-3.5 rounded-2xl text-base transition disabled:opacity-60"
+      style={{
+        background: 'linear-gradient(135deg, var(--jade-500), var(--jade-600))',
+        boxShadow: '0 10px 24px -8px rgb(5 150 105 / 0.35)',
+      }}
+    >
+      {busy ? 'Recording…' : children}
     </button>
   );
 }

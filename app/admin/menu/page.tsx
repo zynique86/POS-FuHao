@@ -1,7 +1,6 @@
 'use client';
 
-// Admin menu management: list items grouped by category, add / edit /
-// toggle availability / delete. Live-updates for every open POS terminal.
+// Menu management — redesigned. Category bands, item rows, modal editor.
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -16,7 +15,6 @@ type Draft = {
   sort_order: string;
   is_available: boolean;
 };
-
 const EMPTY: Draft = {
   name_en: '',
   name_zh: '',
@@ -40,17 +38,11 @@ export default function AdminMenuPage() {
       .order('category')
       .order('sort_order')
       .order('id');
-    if (error) {
-      setErr(error.message);
-    } else {
-      setItems((data ?? []) as MenuItem[]);
-    }
+    if (error) setErr(error.message);
+    else setItems((data ?? []) as MenuItem[]);
     setLoading(false);
   }
-
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   const grouped = useMemo(() => {
     const m = new Map<string, MenuItem[]>();
@@ -66,7 +58,6 @@ export default function AdminMenuPage() {
     setDraft({ ...EMPTY });
     setErr(null);
   }
-
   function startEdit(item: MenuItem) {
     setDraft({
       id: item.id,
@@ -82,19 +73,11 @@ export default function AdminMenuPage() {
 
   async function save() {
     if (!draft) return;
-    if (!draft.name_en.trim()) {
-      setErr('English name is required');
-      return;
-    }
+    if (!draft.name_en.trim()) return setErr('English name is required');
     const priceNum = Number(draft.price);
-    if (!Number.isFinite(priceNum) || priceNum < 0) {
-      setErr('Price must be a non-negative number');
-      return;
-    }
-
+    if (!Number.isFinite(priceNum) || priceNum < 0) return setErr('Price must be a non-negative number');
     setSaving(true);
     setErr(null);
-
     const payload = {
       name_en: draft.name_en.trim(),
       name_zh: draft.name_zh.trim() || null,
@@ -103,139 +86,141 @@ export default function AdminMenuPage() {
       sort_order: Number(draft.sort_order) || 0,
       is_available: draft.is_available,
     };
-
     const { error } = draft.id
       ? await supabase.from('menu_items').update(payload).eq('id', draft.id)
       : await supabase.from('menu_items').insert(payload);
-
     setSaving(false);
-    if (error) {
-      setErr(error.message);
-      return;
-    }
+    if (error) return setErr(error.message);
     setDraft(null);
     load();
   }
 
   async function toggleAvailability(item: MenuItem) {
-    await supabase
-      .from('menu_items')
-      .update({ is_available: !item.is_available })
-      .eq('id', item.id);
+    await supabase.from('menu_items').update({ is_available: !item.is_available }).eq('id', item.id);
     load();
   }
-
   async function del(item: MenuItem) {
     if (!confirm(`Delete "${item.name_en}"? This cannot be undone.`)) return;
     const { error } = await supabase.from('menu_items').delete().eq('id', item.id);
-    if (error) {
-      alert('Delete failed: ' + error.message);
-      return;
-    }
+    if (error) return alert('Delete failed: ' + error.message);
     load();
   }
 
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-stone-50 p-6">
-        <p>Loading menu…</p>
-      </main>
-    );
-  }
-
   return (
-    <main className="min-h-screen bg-stone-50 p-4 md:p-8">
-      <header className="flex justify-between items-center mb-6">
+    <main className="min-h-[calc(100vh-56px)] max-w-[1200px] mx-auto px-4 md:px-6 py-6">
+      <header className="flex flex-wrap justify-between items-end gap-4 mb-6">
         <div>
-          <a href="/admin" className="text-sm text-stone-500 hover:text-red-700">
-            ← Back to dashboard
+          <a href="/admin" className="text-xs uppercase tracking-widest text-[var(--ink-500)] hover:text-[var(--brand-600)]">
+            ← Dashboard
           </a>
-          <h1 className="text-3xl font-bold text-stone-800">🥟 Menu</h1>
+          <h1 className="text-3xl md:text-4xl font-bold text-[var(--ink-900)] mt-2">
+            Menu · 菜單
+          </h1>
         </div>
         <button
           onClick={startAdd}
-          className="bg-red-700 hover:bg-red-800 text-white font-bold px-4 py-2 rounded"
+          className="text-white font-bold px-5 py-3 rounded-2xl transition"
+          style={{
+            background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
+            boxShadow: 'var(--shadow-brand)',
+          }}
         >
           + Add item
         </button>
       </header>
 
       {err && !draft && (
-        <p className="bg-red-50 text-red-700 p-3 rounded mb-4 text-sm">{err}</p>
+        <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] text-[var(--brand-700)] p-3 rounded-xl mb-4 text-sm">
+          {err}
+        </div>
       )}
 
-      <div className="space-y-6">
-        {grouped.map(([category, list]) => (
-          <section
-            key={category}
-            className="bg-white rounded-lg border border-stone-200 overflow-hidden"
-          >
-            <h2 className="text-lg font-bold text-stone-800 px-4 py-3 bg-stone-100 border-b border-stone-200">
-              {category}
-            </h2>
-            <ul className="divide-y divide-stone-100">
-              {list.map((item) => (
-                <li
-                  key={item.id}
-                  className={`flex flex-wrap items-center gap-3 px-4 py-3 ${
-                    item.is_available ? '' : 'bg-stone-50 opacity-60'
-                  }`}
-                >
-                  <div className="flex-1 min-w-[200px]">
-                    <div className="font-bold text-stone-800">{item.name_en}</div>
-                    {item.name_zh && (
-                      <div className="text-sm text-stone-500">{item.name_zh}</div>
-                    )}
-                  </div>
-                  <div className="font-mono text-red-700 w-24 text-right">
-                    RM {Number(item.price).toFixed(2)}
-                  </div>
-                  <button
-                    onClick={() => toggleAvailability(item)}
-                    className={`text-xs px-2 py-1 rounded font-bold ${
-                      item.is_available
-                        ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                        : 'bg-stone-200 text-stone-600 hover:bg-stone-300'
+      {loading ? (
+        <p className="text-[var(--ink-500)]">Loading menu…</p>
+      ) : grouped.length === 0 ? (
+        <div className="text-center py-20">
+          <div className="text-6xl mb-3 opacity-40">🥟</div>
+          <p className="text-lg text-[var(--ink-700)] font-semibold">No menu items yet</p>
+          <p className="text-sm text-[var(--ink-500)] mt-1">Tap "Add item" to create the first one.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {grouped.map(([category, list]) => (
+            <section
+              key={category}
+              className="bg-white rounded-3xl border border-[var(--ink-200)] overflow-hidden"
+              style={{ boxShadow: 'var(--shadow-sm)' }}
+            >
+              <div
+                className="px-5 py-3 flex items-baseline justify-between"
+                style={{
+                  background: 'linear-gradient(90deg, var(--cream-100), var(--cream-50))',
+                  borderBottom: '1px solid var(--ink-100)',
+                }}
+              >
+                <h2 className="text-sm font-bold text-[var(--ink-800)] uppercase tracking-widest">
+                  {category}
+                </h2>
+                <span className="text-xs text-[var(--ink-400)] font-mono">{list.length}</span>
+              </div>
+              <ul className="divide-y divide-[var(--ink-100)]">
+                {list.map((item) => (
+                  <li
+                    key={item.id}
+                    className={`flex flex-wrap items-center gap-3 px-5 py-4 ${
+                      item.is_available ? '' : 'bg-[var(--ink-100)]/50 opacity-60'
                     }`}
                   >
-                    {item.is_available ? 'Available' : 'Sold out'}
-                  </button>
-                  <button
-                    onClick={() => startEdit(item)}
-                    className="text-xs px-3 py-1 rounded bg-stone-100 text-stone-700 hover:bg-stone-200 font-bold"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => del(item)}
-                    className="text-xs px-3 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100 font-bold"
-                  >
-                    Delete
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
+                    <div className="flex-1 min-w-[220px]">
+                      <div className="font-bold text-[var(--ink-900)]">{item.name_en}</div>
+                      {item.name_zh && (
+                        <div className="text-sm text-[var(--ink-500)]">{item.name_zh}</div>
+                      )}
+                    </div>
+                    <div className="font-mono text-[var(--brand-700)] font-semibold w-24 text-right">
+                      RM {Number(item.price).toFixed(2)}
+                    </div>
+                    <button
+                      onClick={() => toggleAvailability(item)}
+                      className={`text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest ${
+                        item.is_available
+                          ? 'bg-[var(--jade-100)] text-[var(--jade-600)]'
+                          : 'bg-[var(--ink-200)] text-[var(--ink-500)]'
+                      }`}
+                    >
+                      {item.is_available ? 'Available' : 'Sold out'}
+                    </button>
+                    <button
+                      onClick={() => startEdit(item)}
+                      className="text-xs px-3 py-2 rounded-lg bg-[var(--cream-100)] hover:bg-[var(--cream-200)] text-[var(--ink-800)] font-bold"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => del(item)}
+                      className="text-xs px-3 py-2 rounded-lg bg-[var(--brand-50)] hover:bg-[var(--brand-100)] text-[var(--brand-700)] font-bold"
+                    >
+                      Delete
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      )}
 
-        {grouped.length === 0 && (
-          <div className="text-center text-stone-400 py-16">
-            <p>No menu items yet. Tap “Add item” to create the first one.</p>
-          </div>
-        )}
-      </div>
-
-      {/* EDIT / ADD MODAL */}
       {draft && (
         <div
-          className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-[var(--ink-900)]/50 backdrop-blur-sm flex items-center justify-center p-4 z-50"
           onClick={() => !saving && setDraft(null)}
         >
           <div
-            className="bg-white rounded-lg max-w-md w-full p-6"
+            className="bg-white rounded-3xl max-w-md w-full p-6 animate-rise"
             onClick={(e) => e.stopPropagation()}
+            style={{ boxShadow: 'var(--shadow-lg)' }}
           >
-            <h2 className="text-xl font-bold mb-4">
+            <h2 className="text-xl font-bold text-[var(--ink-900)] mb-5">
               {draft.id ? 'Edit item' : 'Add item'}
             </h2>
 
@@ -244,7 +229,7 @@ export default function AdminMenuPage() {
                 autoFocus
                 value={draft.name_en}
                 onChange={(e) => setDraft({ ...draft, name_en: e.target.value })}
-                className="w-full px-3 py-2 border border-stone-300 rounded"
+                className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
               />
             </Field>
 
@@ -252,7 +237,7 @@ export default function AdminMenuPage() {
               <input
                 value={draft.name_zh}
                 onChange={(e) => setDraft({ ...draft, name_zh: e.target.value })}
-                className="w-full px-3 py-2 border border-stone-300 rounded"
+                className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
               />
             </Field>
 
@@ -263,17 +248,15 @@ export default function AdminMenuPage() {
                   step="0.10"
                   value={draft.price}
                   onChange={(e) => setDraft({ ...draft, price: e.target.value })}
-                  className="w-full px-3 py-2 border border-stone-300 rounded font-mono"
+                  className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl font-mono focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
                 />
               </Field>
               <Field label="Sort order">
                 <input
                   type="number"
                   value={draft.sort_order}
-                  onChange={(e) =>
-                    setDraft({ ...draft, sort_order: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-stone-300 rounded font-mono"
+                  onChange={(e) => setDraft({ ...draft, sort_order: e.target.value })}
+                  className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl font-mono focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
                 />
               </Field>
             </div>
@@ -283,7 +266,7 @@ export default function AdminMenuPage() {
                 value={draft.category}
                 onChange={(e) => setDraft({ ...draft, category: e.target.value })}
                 list="cat-suggestions"
-                className="w-full px-3 py-2 border border-stone-300 rounded"
+                className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
               />
               <datalist id="cat-suggestions">
                 <option value="Steamed" />
@@ -297,35 +280,38 @@ export default function AdminMenuPage() {
               </datalist>
             </Field>
 
-            <label className="flex items-center gap-2 mb-4 text-sm">
+            <label className="flex items-center gap-2 mb-5 text-sm text-[var(--ink-800)] cursor-pointer">
               <input
                 type="checkbox"
                 checked={draft.is_available}
-                onChange={(e) =>
-                  setDraft({ ...draft, is_available: e.target.checked })
-                }
+                onChange={(e) => setDraft({ ...draft, is_available: e.target.checked })}
+                className="w-4 h-4 accent-[var(--brand-600)]"
               />
               Available on POS
             </label>
 
             {err && (
-              <p className="bg-red-50 text-red-700 p-2 rounded mb-3 text-sm">
+              <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] text-[var(--brand-700)] p-2 rounded-xl mb-4 text-sm">
                 {err}
-              </p>
+              </div>
             )}
 
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setDraft(null)}
                 disabled={saving}
-                className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold py-2 rounded"
+                className="w-full bg-[var(--cream-100)] hover:bg-[var(--cream-200)] text-[var(--ink-800)] font-bold py-3 rounded-2xl"
               >
                 Cancel
               </button>
               <button
                 onClick={save}
                 disabled={saving}
-                className="flex-1 bg-red-700 hover:bg-red-800 disabled:bg-stone-300 text-white font-bold py-2 rounded"
+                className="w-full text-white font-bold py-3 rounded-2xl disabled:opacity-60"
+                style={{
+                  background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
+                  boxShadow: 'var(--shadow-brand)',
+                }}
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>
@@ -337,16 +323,12 @@ export default function AdminMenuPage() {
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block mb-3">
-      <span className="block text-sm text-stone-600 mb-1">{label}</span>
+      <span className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-1.5 font-semibold">
+        {label}
+      </span>
       {children}
     </label>
   );

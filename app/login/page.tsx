@@ -15,67 +15,98 @@ export default function LoginPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-
     if (error) {
       setError(error.message);
       setBusy(false);
       return;
     }
-
     router.push('/');
     router.refresh();
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center p-4">
+    <main
+      className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
+      style={{
+        background:
+          'radial-gradient(1200px 700px at 20% 20%, rgb(251 191 36 / 0.20), transparent 60%), radial-gradient(900px 600px at 90% 90%, rgb(220 38 38 / 0.14), transparent 60%), var(--cream-100)',
+      }}
+    >
+      {/* Decorative floating dumpling glyphs */}
+      <div aria-hidden className="absolute inset-0 pointer-events-none select-none">
+        <span className="absolute top-[12%] left-[8%] text-6xl opacity-10">🥟</span>
+        <span className="absolute bottom-[15%] right-[10%] text-7xl opacity-10">🫖</span>
+        <span className="absolute top-[65%] left-[12%] text-5xl opacity-10">🥢</span>
+      </div>
+
       <form
         onSubmit={onSubmit}
-        className="bg-white rounded-2xl shadow-lg border border-amber-100 p-8 max-w-sm w-full"
+        className="relative w-full max-w-sm bg-white rounded-[var(--r-2xl)] p-8 animate-rise"
+        style={{ boxShadow: 'var(--shadow-lg)' }}
       >
-        <div className="text-center mb-6">
-          <div className="text-5xl mb-2">🥟</div>
-          <h1 className="text-3xl font-bold text-red-800">Dim Sum POS</h1>
-          <p className="text-stone-500 text-sm mt-1">Staff sign-in</p>
+        <div className="text-center mb-7">
+          <div
+            className="inline-flex w-16 h-16 rounded-2xl items-center justify-center text-4xl mb-3"
+            style={{
+              background:
+                'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
+              boxShadow: 'var(--shadow-brand)',
+            }}
+          >
+            🥟
+          </div>
+          <h1 className="text-2xl font-bold text-[var(--ink-900)]">Dim Sum POS</h1>
+          <p className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)] mt-1">
+            點心 · Staff sign-in
+          </p>
         </div>
 
-        <label className="block text-sm text-stone-600 mb-1">Email</label>
+        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--ink-500)] mb-1">
+          Email
+        </label>
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
           autoComplete="username"
-          className="w-full px-3 py-3 border border-stone-300 rounded-lg mb-3 text-base"
+          className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl mb-4 text-base focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)] transition"
         />
 
-        <label className="block text-sm text-stone-600 mb-1">Password</label>
+        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--ink-500)] mb-1">
+          Password
+        </label>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
           autoComplete="current-password"
-          className="w-full px-3 py-3 border border-stone-300 rounded-lg mb-3 text-base"
+          className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl mb-4 text-base focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)] transition"
         />
 
         {error && (
-          <p className="text-red-700 text-sm mb-3 bg-red-50 p-2 rounded">
+          <div className="text-[var(--brand-700)] text-sm mb-4 bg-[var(--brand-50)] border border-[var(--brand-100)] p-3 rounded-xl">
             {error}
-          </p>
+          </div>
         )}
 
         <button
           type="submit"
           disabled={busy}
-          className="w-full bg-red-700 hover:bg-red-800 disabled:bg-stone-300 text-white font-bold py-3 rounded-lg text-base"
+          className="w-full text-white font-bold py-3 rounded-xl text-base transition disabled:opacity-60"
+          style={{
+            background:
+              'linear-gradient(135deg, var(--brand-600), var(--brand-700))',
+            boxShadow: 'var(--shadow-brand)',
+          }}
         >
           {busy ? 'Signing in…' : 'Sign In'}
         </button>
 
-        <p className="text-xs text-stone-400 mt-4 text-center">
-          New staff accounts are created by the manager in the Supabase dashboard.
+        <p className="text-xs text-[var(--ink-400)] mt-5 text-center">
+          Ask your manager to create new staff accounts in Supabase.
         </p>
       </form>
     </main>
