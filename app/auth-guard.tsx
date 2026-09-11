@@ -90,6 +90,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           <nav className="flex items-center gap-1">
             <NavLink href="/"        active={pathname === '/'}                        label="POS" />
             <NavLink href="/kitchen" active={pathname === '/kitchen'}                 label="Kitchen" />
+            <NavLink href="/bar"     active={pathname === '/bar'}                     label="Bar" />
             <NavLink href="/restock" active={pathname === '/restock'}                 label="Restock" />
             <NavLink href="/cashier" active={pathname === '/cashier'}                 label="Cashier" />
             <NavLink href="/admin"   active={pathname?.startsWith('/admin') ?? false} label="Admin" />
