@@ -165,16 +165,26 @@ export default function StationDisplay({
       className="min-h-[calc(100vh-56px)] text-white"
       style={{ background: theme.bg }}
     >
-      <div className="max-w-[1600px] mx-auto px-4 md:px-6 py-6">
-        <header className="flex justify-between items-end mb-6">
+      <main className="max-w-[1600px] mx-auto px-4 md:px-6 py-6">
+        <header className="flex flex-wrap items-end justify-between gap-4 mb-6">
           <div>
             <p className="text-xs uppercase tracking-[0.2em]" style={{ color: theme.accent }}>
               {emoji} {title} · {titleZh}
             </p>
-            <h1 className="text-3xl md:text-4xl font-bold mt-1">Line</h1>
+            <h1 className="text-3xl md:text-4xl font-bold mt-1">
+              {station === 'bar' ? 'Now Serving' : 'Now Cooking'}
+            </h1>
+            <p className="text-sm text-white/50 mt-1">
+              {station === 'bar'
+                ? 'Drinks come in here. Tap a status to advance it.'
+                : 'Food tickets come in here. Tap a status to advance it.'}
+            </p>
           </div>
-          <div className="text-right">
-            <p className="text-[10px] uppercase tracking-widest text-white/50">Open orders</p>
+          <div
+            className="rounded-2xl px-4 py-2.5 border"
+            style={{ background: 'rgb(255 255 255 / 0.06)', borderColor: 'rgb(255 255 255 / 0.10)' }}
+          >
+            <p className="text-[10px] uppercase tracking-widest text-white/60">Open orders</p>
             <p className="text-2xl font-bold font-mono">{orders.length}</p>
           </div>
         </header>
@@ -271,7 +281,7 @@ export default function StationDisplay({
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-8">
           {orders.map((order) => {
             const allServed =
               order.items.length > 0 && order.items.every((i) => i.kitchen_status === 'served');
@@ -368,7 +378,7 @@ export default function StationDisplay({
             );
           })}
         </div>
-      </div>
+      </main>
     </div>
   );
 }
