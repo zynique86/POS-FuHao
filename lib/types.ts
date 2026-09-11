@@ -6,6 +6,7 @@ export type MenuItem = {
   name_en: string;
   name_zh: string | null;
   price: number;
+  cost_price: number;      // "modal" (本錢) — cost to produce
   category: string;
   is_available: boolean;
   sort_order: number;
@@ -35,6 +36,7 @@ export type OrderItem = {
   name_zh_snapshot: string | null;
   qty: number;
   price_at_time: number;
+  cost_at_time: number;   // snapshot of cost when order was placed
   kitchen_status: string;
   voided_at: string | null;
   void_reason: string | null;

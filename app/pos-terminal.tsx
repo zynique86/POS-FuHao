@@ -190,6 +190,7 @@ export default function POSTerminal({
         name_snapshot: l.item.name_en,
         name_zh_snapshot: l.item.name_zh,
         price_at_time: l.item.price,
+        cost_at_time: l.item.cost_price ?? 0,
         qty: l.qty,
       }));
 
