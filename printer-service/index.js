@@ -142,6 +142,12 @@ async function handleKitchen(job, station) {
     printer.println(`${i.qty}x  ${i.name_snapshot}`);
     printer.bold(false);
     if (i.name_zh_snapshot) printer.println(`     ${i.name_zh_snapshot}`);
+    if (i.options) {
+      printer.println(`     ► ${i.options}`);
+    }
+    if (i.note) {
+      printer.println(`     ► NOTE: ${i.note}`);
+    }
   });
   printer.cut();
   await printer.execute();
@@ -164,6 +170,8 @@ async function handleReceipt(job, station) {
   const svc = Number(order.service_charge) || 0;
   const tax = Number(order.tax) || 0;
   const rounding = Number(order.rounding) || 0;
+  const discount = Number(order.discount) || 0;
+  const discountReason = order.discount_reason;
   const total = Number(order.total) || 0;
   const when = new Date().toLocaleString('en-MY');
   const isReprint = !!(order.paid_at && job.payload?.reprint);
@@ -220,11 +228,16 @@ async function handleReceipt(job, station) {
       { text: `RM ${lineTotal.toFixed(2)}`, width: 0.3, align: 'RIGHT' },
     ]);
     if (i.name_zh_snapshot) printer.println(`   ${i.name_zh_snapshot}`);
+    if (i.options) printer.println(`   ► ${i.options}`);
+    if (i.note) printer.println(`   ► ${i.note}`);
   });
   printer.drawLine();
   row(printer, 'Subtotal', subtotal);
   if (svc > 0) row(printer, `Service ${settings.service_charge_pct}%`, svc);
   if (tax > 0) row(printer, `SST ${settings.sst_pct}%`, tax);
+  if (discount > 0) {
+    row(printer, `Discount${discountReason ? ' (' + discountReason + ')' : ''}`, -discount);
+  }
   if (rounding !== 0) row(printer, 'Rounding', rounding);
   printer.bold(true);
   row(printer, 'TOTAL', total);

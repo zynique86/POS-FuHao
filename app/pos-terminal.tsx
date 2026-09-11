@@ -8,9 +8,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { computeBreakdown, sumLines } from '@/lib/pricing';
 import { useSettings } from '@/lib/use-settings';
-import type { MenuItem, ShopSettings } from '@/lib/types';
+import { ModalShell, PrimaryBtn, SecondaryBtn } from '@/components/ui';
+import { ITEM_OPTIONS, type MenuItem, type ShopSettings } from '@/lib/types';
 
-type CartLine = { item: MenuItem; qty: number };
+type CartLine = {
+  key: string;         // unique per line (so two lines of same item stay distinct)
+  item: MenuItem;
+  qty: number;
+  options: string[];   // e.g. ['No pork', 'Extra sauce']
+  note: string;        // free text
+};
 type ExistingLine = {
   id: number;
   menu_item_id: number | null;
@@ -18,6 +25,8 @@ type ExistingLine = {
   name_zh: string | null;
   qty: number;
   price: number;
+  options: string | null;
+  note: string | null;
   kitchen_status: string;
 };
 type ExistingOrder = { id: number; lines: ExistingLine[] };
@@ -38,6 +47,7 @@ export default function POSTerminal({
   const [stationFilter, setStationFilter] = useState<'all' | 'kitchen' | 'bar'>('all');
   const [sending, setSending] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [optionsFor, setOptionsFor] = useState<MenuItem | null>(null);
 
   // Live menu
   useEffect(() => {
@@ -80,7 +90,7 @@ export default function POSTerminal({
 
       const { data: rows } = await supabase
         .from('order_items')
-        .select('id, menu_item_id, name_snapshot, name_zh_snapshot, qty, price_at_time, kitchen_status, voided_at')
+        .select('id, menu_item_id, name_snapshot, name_zh_snapshot, qty, price_at_time, options, note, kitchen_status, voided_at')
         .eq('order_id', order.id)
         .is('voided_at', null)
         .order('id');
@@ -93,6 +103,8 @@ export default function POSTerminal({
           name_zh: r.name_zh_snapshot,
           qty: r.qty,
           price: Number(r.price_at_time),
+          options: r.options,
+          note: r.note,
           kitchen_status: r.kitchen_status,
         })),
       });
@@ -150,17 +162,39 @@ export default function POSTerminal({
   }, [items]);
 
   // Cart mutations
-  function addToCart(item: MenuItem) {
+  // Opening the item opens a modal for qty + optional modifiers + note.
+  // If the user just wants a plain qty=1 with no options, they can tap "Add"
+  // in the modal without touching anything.
+  function openAddModal(item: MenuItem) {
+    setOptionsFor(item);
+  }
+
+  function addLineToCart(line: CartLine) {
+    // If a matching plain line (no options, no note) already exists, just
+    // bump its qty. Otherwise add as a new line so notes stay distinct.
+    const isPlain = line.options.length === 0 && !line.note.trim();
     setCart((prev) => {
-      const line = prev.find((l) => l.item.id === item.id);
-      if (line) return prev.map((l) => (l.item.id === item.id ? { ...l, qty: l.qty + 1 } : l));
-      return [...prev, { item, qty: 1 }];
+      if (isPlain) {
+        const existing = prev.find(
+          (l) => l.item.id === line.item.id && l.options.length === 0 && !l.note.trim()
+        );
+        if (existing) {
+          return prev.map((l) =>
+            l.key === existing.key ? { ...l, qty: l.qty + line.qty } : l
+          );
+        }
+      }
+      return [...prev, line];
     });
   }
-  function removeOne(id: number) {
+
+  function removeOne(key: string) {
     setCart((prev) =>
-      prev.map((l) => (l.item.id === id ? { ...l, qty: l.qty - 1 } : l)).filter((l) => l.qty > 0)
+      prev.map((l) => (l.key === key ? { ...l, qty: l.qty - 1 } : l)).filter((l) => l.qty > 0)
     );
+  }
+  function addOne(key: string) {
+    setCart((prev) => prev.map((l) => (l.key === key ? { ...l, qty: l.qty + 1 } : l)));
   }
 
   // Totals
@@ -209,6 +243,8 @@ export default function POSTerminal({
         name_snapshot: l.item.name_en,
         name_zh_snapshot: l.item.name_zh,
         price_at_time: l.item.price,
+        options: l.options.length > 0 ? l.options.join(', ') : null,
+        note: l.note.trim() || null,
         qty: l.qty,
       }));
 
@@ -296,12 +332,12 @@ export default function POSTerminal({
                     {list.length}
                   </span>
                 </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                   {list.map((item) => (
                     <MenuButton
                       key={item.id}
                       item={item}
-                      onAdd={() => addToCart(item)}
+                      onAdd={() => openAddModal(item)}
                     />
                   ))}
                 </div>
@@ -318,6 +354,18 @@ export default function POSTerminal({
           </div>
         </section>
 
+        {/* Item options modal */}
+        {optionsFor && (
+          <ItemOptionsModal
+            item={optionsFor}
+            onCancel={() => setOptionsFor(null)}
+            onAdd={(line) => {
+              addLineToCart(line);
+              setOptionsFor(null);
+            }}
+          />
+        )}
+
         {/* Cart */}
         <aside className="lg:sticky lg:top-[76px] h-fit">
           <CartPanel
@@ -329,10 +377,7 @@ export default function POSTerminal({
             newCount={newCount}
             imageByItemId={imageByItemId}
             onRemoveOne={removeOne}
-            onAddOne={(id) => {
-              const it = items.find((i) => i.id === id);
-              if (it) addToCart(it);
-            }}
+            onAddOne={addOne}
             sending={sending}
             onSend={sendOrder}
             flash={flash}
@@ -489,8 +534,8 @@ function CartPanel({
   settings: ShopSettings;
   newCount: number;
   imageByItemId: Map<number, string>;
-  onRemoveOne: (id: number) => void;
-  onAddOne: (id: number) => void;
+  onRemoveOne: (key: string) => void;
+  onAddOne: (key: string) => void;
   sending: boolean;
   onSend: () => void;
   flash: string | null;
@@ -542,7 +587,7 @@ function CartPanel({
               {existing.lines.map((l) => {
                 const img = l.menu_item_id != null ? imageByItemId.get(l.menu_item_id) : undefined;
                 return (
-                  <li key={l.id} className="flex items-center gap-2 text-sm">
+                  <li key={l.id} className="flex items-start gap-2 text-sm">
                     <CartThumb src={img} station="kitchen" />
                     <div className="min-w-0 flex-1">
                       <div>
@@ -551,6 +596,16 @@ function CartPanel({
                       </div>
                       {l.name_zh && (
                         <div className="text-xs text-[var(--ink-400)]">{l.name_zh}</div>
+                      )}
+                      {l.options && (
+                        <div className="text-[10px] text-[var(--gold-600)] font-semibold mt-0.5">
+                          {l.options}
+                        </div>
+                      )}
+                      {l.note && (
+                        <div className="text-[10px] text-[var(--ink-500)] italic mt-0.5">
+                          "{l.note}"
+                        </div>
                       )}
                       <StatusBadge status={l.kitchen_status} />
                     </div>
@@ -580,8 +635,8 @@ function CartPanel({
           <ul className="space-y-2 mb-4">
             {cart.map((l) => (
               <li
-                key={l.item.id}
-                className="flex items-center justify-between gap-2 bg-[var(--cream-100)] rounded-xl px-2 py-2"
+                key={l.key}
+                className="flex items-start justify-between gap-2 bg-[var(--cream-100)] rounded-xl px-2 py-2"
               >
                 <CartThumb src={l.item.image_url ?? undefined} station={l.item.station} />
                 <div className="min-w-0 flex-1">
@@ -593,10 +648,20 @@ function CartPanel({
                       {l.item.name_zh}
                     </p>
                   )}
+                  {l.options.length > 0 && (
+                    <p className="text-[10px] text-[var(--gold-600)] font-semibold mt-0.5 truncate">
+                      {l.options.join(', ')}
+                    </p>
+                  )}
+                  {l.note && (
+                    <p className="text-[10px] text-[var(--ink-500)] italic mt-0.5 truncate">
+                      "{l.note}"
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
-                    onClick={() => onRemoveOne(l.item.id)}
+                    onClick={() => onRemoveOne(l.key)}
                     className="w-8 h-8 rounded-lg bg-white border border-[var(--ink-200)] text-[var(--ink-700)] font-bold text-lg hover:border-[var(--brand-400)]"
                     aria-label="Remove one"
                   >
@@ -604,7 +669,7 @@ function CartPanel({
                   </button>
                   <span className="font-mono w-6 text-center font-bold">{l.qty}</span>
                   <button
-                    onClick={() => onAddOne(l.item.id)}
+                    onClick={() => onAddOne(l.key)}
                     className="w-8 h-8 rounded-lg bg-white border border-[var(--ink-200)] text-[var(--ink-700)] font-bold text-lg hover:border-[var(--brand-400)]"
                     aria-label="Add one"
                   >
@@ -669,6 +734,119 @@ function Row({ label, value }: { label: string; value: number }) {
       <span>{label}</span>
       <span className="font-mono">RM {value.toFixed(2)}</span>
     </div>
+  );
+}
+
+// ─── item options modal ──────────────────────────────────────────────────
+
+function ItemOptionsModal({
+  item,
+  onCancel,
+  onAdd,
+}: {
+  item: MenuItem;
+  onCancel: () => void;
+  onAdd: (line: CartLine) => void;
+}) {
+  const [qty, setQty] = useState(1);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [note, setNote] = useState('');
+
+  function toggle(label: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  }
+
+  function submit() {
+    const line: CartLine = {
+      key: `${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      item,
+      qty,
+      options: [...selected],
+      note: note.trim(),
+    };
+    onAdd(line);
+  }
+
+  return (
+    <ModalShell onClose={onCancel} title={item.name_en} sub={item.name_zh ?? undefined}>
+      {item.image_url && (
+        <div className="w-full aspect-[4/2] rounded-2xl overflow-hidden mb-4 bg-[var(--cream-100)]">
+          <img src={item.image_url} alt="" className="w-full h-full object-cover" />
+        </div>
+      )}
+
+      <p className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-2 font-semibold">
+        Modifiers
+      </p>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {ITEM_OPTIONS.map((o) => {
+          const label = `${o.label} ${o.label_zh}`;
+          const active = selected.has(label);
+          return (
+            <button
+              key={o.key}
+              onClick={() => toggle(label)}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${
+                active
+                  ? 'text-white'
+                  : 'bg-[var(--cream-100)] text-[var(--ink-700)] border border-[var(--ink-200)] hover:border-[var(--brand-400)]'
+              }`}
+              style={
+                active
+                  ? {
+                      background: 'linear-gradient(135deg, var(--gold-500), var(--brand-600))',
+                    }
+                  : undefined
+              }
+            >
+              {o.label} · {o.label_zh}
+            </button>
+          );
+        })}
+      </div>
+
+      <label className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-1.5 font-semibold">
+        Note
+      </label>
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="e.g. customer is allergic to peanut"
+        rows={2}
+        className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl mb-4 focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+      />
+
+      <div className="flex items-center gap-3 mb-4 bg-[var(--cream-100)] rounded-xl p-2">
+        <span className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold pl-2">
+          Quantity
+        </span>
+        <button
+          onClick={() => setQty(Math.max(1, qty - 1))}
+          className="w-10 h-10 rounded-lg bg-white border border-[var(--ink-200)] text-lg font-bold"
+        >
+          −
+        </button>
+        <span className="flex-1 text-center text-2xl font-bold font-mono">{qty}</span>
+        <button
+          onClick={() => setQty(qty + 1)}
+          className="w-10 h-10 rounded-lg bg-white border border-[var(--ink-200)] text-lg font-bold"
+        >
+          +
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <SecondaryBtn onClick={onCancel}>Cancel</SecondaryBtn>
+        <PrimaryBtn onClick={submit}>
+          Add {qty > 1 ? `${qty}× ` : ''}· RM {(item.price * qty).toFixed(2)}
+        </PrimaryBtn>
+      </div>
+    </ModalShell>
   );
 }
 

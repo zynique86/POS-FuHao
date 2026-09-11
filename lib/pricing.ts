@@ -9,7 +9,8 @@ export type PriceBreakdown = {
   service_charge: number;  // subtotal * service_charge_pct / 100
   tax: number;             // (subtotal + service_charge) * sst_pct / 100
   rounding: number;        // amount added/subtracted to hit nearest 5 sen
-  total: number;           // subtotal + service_charge + tax + rounding
+  discount: number;        // flat RM amount subtracted at the end
+  total: number;           // subtotal + service_charge + tax + rounding - discount
 };
 
 // Round a ringgit amount to the nearest 5 sen (Malaysia dropped 1c/2c coins).
@@ -23,12 +24,14 @@ export function roundToNearest5Sen(amount: number): number {
 // precision (as plain numbers, not strings — format at the edge).
 export function computeBreakdown(
   subtotal: number,
-  settings: Pick<ShopSettings, 'sst_pct' | 'service_charge_pct' | 'round_to_5_sen'>
+  settings: Pick<ShopSettings, 'sst_pct' | 'service_charge_pct' | 'round_to_5_sen'>,
+  discount: number = 0
 ): PriceBreakdown {
   const sub = round2(subtotal);
   const svc = round2(sub * (Number(settings.service_charge_pct) || 0) / 100);
   const tax = round2((sub + svc) * (Number(settings.sst_pct) || 0) / 100);
-  const gross = round2(sub + svc + tax);
+  const discountAmount = Math.max(0, round2(Number(discount) || 0));
+  const gross = round2(sub + svc + tax - discountAmount);
   const total = settings.round_to_5_sen ? roundToNearest5Sen(gross) : gross;
   const rounding = round2(total - gross);
   return {
@@ -36,6 +39,7 @@ export function computeBreakdown(
     service_charge: svc,
     tax,
     rounding,
+    discount: discountAmount,
     total,
   };
 }

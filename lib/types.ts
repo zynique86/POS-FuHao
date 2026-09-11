@@ -36,11 +36,32 @@ export type OrderItem = {
   name_zh_snapshot: string | null;
   qty: number;
   price_at_time: number;
+  options: string | null;   // comma-separated modifier chips
+  note: string | null;      // free-text kitchen note
   kitchen_status: string;
   voided_at: string | null;
   void_reason: string | null;
   voided_by: string | null;
 };
+
+// Common dim-sum modifier options a waiter can toggle when adding an item.
+// Bilingual — kitchen tickets keep the pair so cooks can read either.
+export const ITEM_OPTIONS: { key: string; label: string; label_zh: string }[] = [
+  { key: 'no_pork',      label: 'No pork',       label_zh: '不豬肉' },
+  { key: 'no_shrimp',    label: 'No shrimp',     label_zh: '不蝦' },
+  { key: 'no_peanut',    label: 'No peanut',     label_zh: '不花生' },
+  { key: 'no_coriander', label: 'No coriander',  label_zh: '不香菜' },
+  { key: 'no_spring_onion', label: 'No spring onion', label_zh: '不蔥' },
+  { key: 'less_oil',     label: 'Less oil',      label_zh: '少油' },
+  { key: 'less_salt',    label: 'Less salt',     label_zh: '少鹽' },
+  { key: 'extra_sauce',  label: 'Extra sauce',   label_zh: '多醬' },
+  { key: 'extra_chilli', label: 'Extra chilli',  label_zh: '多辣' },
+  { key: 'no_chilli',    label: 'No chilli',     label_zh: '不辣' },
+  { key: 'well_done',    label: 'Well done',     label_zh: '熟透' },
+  { key: 'hot_water',    label: 'Hot water',     label_zh: '熱水' },
+  { key: 'no_ice',       label: 'No ice',        label_zh: '不加冰' },
+  { key: 'less_sugar',   label: 'Less sugar',    label_zh: '少糖' },
+];
 
 export type OrderStatus = 'open' | 'closed' | 'paid' | 'void' | 'refunded';
 
@@ -52,6 +73,8 @@ export type Order = {
   service_charge: number;
   tax: number;
   rounding: number;
+  discount: number;             // flat RM amount subtracted from total
+  discount_reason: string | null;
   total: number;
   created_at: string;
   paid_at: string | null;

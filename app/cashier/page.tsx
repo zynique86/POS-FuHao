@@ -22,6 +22,7 @@ type Screen =
   | { kind: 'split'; orderId: number }
   | { kind: 'void'; orderId: number; itemId: number }
   | { kind: 'refund'; orderId: number }
+  | { kind: 'discount'; orderId: number }
   | { kind: 'openShift' }
   | { kind: 'closeShift' };
 
@@ -191,6 +192,15 @@ export default function CashierPage() {
             setScreen({ kind: 'closed' });
           }}
           onRefund={() => setScreen({ kind: 'refund', orderId: activeOrder.id })}
+          onDiscount={() => setScreen({ kind: 'discount', orderId: activeOrder.id })}
+        />
+      )}
+
+      {activeOrder && screen.kind === 'discount' && (
+        <DiscountModal
+          order={activeOrder}
+          onCancel={() => setScreen({ kind: 'menu', orderId: activeOrder.id })}
+          onDone={() => setScreen({ kind: 'menu', orderId: activeOrder.id })}
         />
       )}
 
@@ -726,6 +736,7 @@ function OrderMenuModal({
   onVoidItem,
   onReprint,
   onRefund,
+  onDiscount,
 }: {
   order: Order;
   onClose: () => void;
@@ -734,6 +745,7 @@ function OrderMenuModal({
   onVoidItem: (itemId: number) => void;
   onReprint: () => void;
   onRefund: () => void;
+  onDiscount: () => void;
 }) {
   const isPaid = !!order.paid_at;
   const paidSoFar = order.payments.reduce((s, p) => s + Number(p.amount), 0);
@@ -781,6 +793,12 @@ function OrderMenuModal({
         )}
         {Number(order.tax) > 0 && <BRow label="SST" value={Number(order.tax)} />}
         {Number(order.rounding) !== 0 && <BRow label="Rounding" value={Number(order.rounding)} />}
+        {Number(order.discount) > 0 && (
+          <div className="flex justify-between text-[var(--jade-600)]">
+            <span>Discount{order.discount_reason ? ` · ${order.discount_reason}` : ''}</span>
+            <span className="font-mono">− RM {Number(order.discount).toFixed(2)}</span>
+          </div>
+        )}
         <div className="flex justify-between text-lg font-bold text-[var(--ink-900)] pt-2 border-t border-[var(--ink-100)]">
           <span>Total</span>
           <span className="font-mono text-[var(--brand-700)]">
@@ -803,7 +821,10 @@ function OrderMenuModal({
           <PrimaryBtn onClick={() => onPayFull(remaining)}>
             Pay RM {remaining.toFixed(2)}
           </PrimaryBtn>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
+            <SecondaryBtn onClick={onDiscount}>
+              {Number(order.discount) > 0 ? 'Edit discount' : 'Discount'}
+            </SecondaryBtn>
             <SecondaryBtn onClick={onSplit}>Split bill</SecondaryBtn>
             <SecondaryBtn onClick={onClose}>Close</SecondaryBtn>
           </div>
@@ -1171,6 +1192,163 @@ function VoidModal({
         <SecondaryBtn onClick={onCancel} disabled={busy}>Cancel</SecondaryBtn>
         <PrimaryBtn onClick={confirm} disabled={busy}>
           {busy ? 'Voiding…' : 'Confirm void'}
+        </PrimaryBtn>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ─── discount modal ───────────────────────────────────────────────────────
+
+function DiscountModal({
+  order,
+  onCancel,
+  onDone,
+}: {
+  order: Order;
+  onCancel: () => void;
+  onDone: () => void;
+}) {
+  const [mode, setMode] = useState<'pct' | 'amount'>('amount');
+  const [value, setValue] = useState<string>(
+    Number(order.discount) > 0 ? String(order.discount) : ''
+  );
+  const [reason, setReason] = useState<string>(order.discount_reason ?? '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const subtotal = Number(order.subtotal ?? order.total) || 0;
+  const svc = Number(order.service_charge) || 0;
+  const tax = Number(order.tax) || 0;
+  const grossBeforeDiscount = subtotal + svc + tax;
+
+  const discount = useMemo(() => {
+    const n = Number(value) || 0;
+    if (n <= 0) return 0;
+    if (mode === 'pct') return Math.min(grossBeforeDiscount, (grossBeforeDiscount * n) / 100);
+    return Math.min(grossBeforeDiscount, n);
+  }, [value, mode, grossBeforeDiscount]);
+
+  const newGross = Math.max(0, grossBeforeDiscount - discount);
+  const rounded = Math.round(newGross * 20) / 20; // 5-sen rounding, always on for MYR shops
+  const rounding = Math.round((rounded - newGross) * 100) / 100;
+  const newTotal = rounded;
+
+  async function apply(clear: boolean = false) {
+    setBusy(true);
+    setErr(null);
+    try {
+      const d = clear ? 0 : discount;
+      const finalGross = subtotal + svc + tax - d;
+      const finalTotal = Math.round(finalGross * 20) / 20;
+      const finalRounding = Math.round((finalTotal - finalGross) * 100) / 100;
+
+      const { error } = await supabase
+        .from('orders')
+        .update({
+          discount: Math.round(d * 100) / 100,
+          discount_reason: clear ? null : (reason.trim() || null),
+          rounding: finalRounding,
+          total: finalTotal,
+        })
+        .eq('id', order.id);
+      if (error) throw error;
+      onDone();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Failed to apply');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ModalShell onClose={onCancel} title="Discount" sub={`Table ${order.table_number}`}>
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <button
+          onClick={() => setMode('amount')}
+          className={`py-3 rounded-xl font-bold text-sm transition ${
+            mode === 'amount'
+              ? 'text-white'
+              : 'bg-[var(--cream-100)] text-[var(--ink-700)] hover:bg-[var(--cream-200)]'
+          }`}
+          style={mode === 'amount' ? { background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))' } : undefined}
+        >
+          RM amount
+        </button>
+        <button
+          onClick={() => setMode('pct')}
+          className={`py-3 rounded-xl font-bold text-sm transition ${
+            mode === 'pct'
+              ? 'text-white'
+              : 'bg-[var(--cream-100)] text-[var(--ink-700)] hover:bg-[var(--cream-200)]'
+          }`}
+          style={mode === 'pct' ? { background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))' } : undefined}
+        >
+          Percentage %
+        </button>
+      </div>
+
+      <label className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-1.5 font-semibold">
+        {mode === 'pct' ? 'Percentage off (%)' : 'Amount off (RM)'}
+      </label>
+      <input
+        type="number"
+        inputMode="decimal"
+        step={mode === 'pct' ? '1' : '0.05'}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={mode === 'pct' ? '10' : '5.00'}
+        className="w-full px-4 py-4 text-3xl font-mono border-2 border-[var(--ink-200)] rounded-2xl mb-4 focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+        autoFocus
+      />
+
+      <label className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-1.5 font-semibold">
+        Reason (optional)
+      </label>
+      <input
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="e.g. regular customer, senior citizen"
+        className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl mb-4 focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+      />
+
+      {/* Preview */}
+      <div className="bg-[var(--cream-100)] rounded-2xl p-4 mb-4 space-y-1 text-sm">
+        <div className="flex justify-between text-[var(--ink-600)]">
+          <span>Subtotal + service + SST</span>
+          <span className="font-mono">RM {grossBeforeDiscount.toFixed(2)}</span>
+        </div>
+        {discount > 0 && (
+          <div className="flex justify-between text-[var(--jade-600)] font-semibold">
+            <span>Discount</span>
+            <span className="font-mono">− RM {discount.toFixed(2)}</span>
+          </div>
+        )}
+        {rounding !== 0 && (
+          <div className="flex justify-between text-[var(--ink-600)]">
+            <span>Rounding</span>
+            <span className="font-mono">RM {rounding.toFixed(2)}</span>
+          </div>
+        )}
+        <div className="flex justify-between text-lg font-bold text-[var(--ink-900)] pt-1 border-t border-[var(--cream-300)]">
+          <span>New total</span>
+          <span className="font-mono text-[var(--brand-700)]">RM {newTotal.toFixed(2)}</span>
+        </div>
+      </div>
+
+      {err && (
+        <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] text-[var(--brand-700)] p-2 rounded-xl mb-3 text-sm">
+          {err}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        {Number(order.discount) > 0 ? (
+          <SecondaryBtn onClick={() => apply(true)} disabled={busy}>Clear discount</SecondaryBtn>
+        ) : (
+          <SecondaryBtn onClick={onCancel} disabled={busy}>Cancel</SecondaryBtn>
+        )}
+        <PrimaryBtn onClick={() => apply(false)} disabled={busy || discount === 0}>
+          {busy ? 'Applying…' : `Apply · RM ${discount.toFixed(2)}`}
         </PrimaryBtn>
       </div>
     </ModalShell>
