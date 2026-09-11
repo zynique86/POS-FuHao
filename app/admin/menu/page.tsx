@@ -11,6 +11,7 @@ type Draft = {
   name_en: string;
   name_zh: string;
   price: string;
+  image_url: string;
   category: string;
   sort_order: string;
   is_available: boolean;
@@ -20,6 +21,7 @@ const EMPTY: Draft = {
   name_en: '',
   name_zh: '',
   price: '',
+  image_url: '',
   category: 'Steamed',
   sort_order: '0',
   is_available: true,
@@ -31,6 +33,41 @@ export default function AdminMenuPage() {
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  async function uploadImageFile(file: File): Promise<string> {
+    const ext = (file.name.split('.').pop() ?? 'jpg').toLowerCase();
+    // Prefix with timestamp so filenames don't collide.
+    const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error } = await supabase.storage
+      .from('menu-photos')
+      .upload(path, file, { cacheControl: '3600', upsert: false });
+    if (error) throw error;
+    const { data } = supabase.storage.from('menu-photos').getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  async function pickImage(file: File | null) {
+    if (!draft || !file) return;
+    if (!file.type.startsWith('image/')) {
+      setErr('Please pick an image file');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setErr('Image is too big (5 MB max)');
+      return;
+    }
+    setUploading(true);
+    setErr(null);
+    try {
+      const url = await uploadImageFile(file);
+      setDraft({ ...draft, image_url: url });
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }
   const [err, setErr] = useState<string | null>(null);
 
   async function load() {
@@ -66,6 +103,7 @@ export default function AdminMenuPage() {
       name_en: item.name_en,
       name_zh: item.name_zh ?? '',
       price: String(item.price),
+      image_url: item.image_url ?? '',
       category: item.category || 'Other',
       sort_order: String(item.sort_order ?? 0),
       is_available: item.is_available !== false,
@@ -85,6 +123,7 @@ export default function AdminMenuPage() {
       name_en: draft.name_en.trim(),
       name_zh: draft.name_zh.trim() || null,
       price: priceNum,
+      image_url: draft.image_url.trim() || null,
       category: draft.category.trim() || 'Other',
       sort_order: Number(draft.sort_order) || 0,
       is_available: draft.is_available,
@@ -175,7 +214,18 @@ export default function AdminMenuPage() {
                       item.is_available ? '' : 'bg-[var(--ink-100)]/50 opacity-60'
                     }`}
                   >
-                    <div className="flex-1 min-w-[220px]">
+                    {item.image_url ? (
+                      <img
+                        src={item.image_url}
+                        alt=""
+                        className="w-12 h-12 rounded-xl object-cover border border-[var(--ink-100)]"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-xl bg-[var(--cream-100)] border border-[var(--ink-100)] flex items-center justify-center text-lg opacity-40">
+                        {item.station === 'bar' ? '🫖' : '🥟'}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-[200px]">
                       <div className="font-bold text-[var(--ink-900)]">{item.name_en}</div>
                       {item.name_zh && (
                         <div className="text-sm text-[var(--ink-500)]">{item.name_zh}</div>
@@ -234,9 +284,70 @@ export default function AdminMenuPage() {
             onClick={(e) => e.stopPropagation()}
             style={{ boxShadow: 'var(--shadow-lg)' }}
           >
-            <h2 className="text-xl font-bold text-[var(--ink-900)] mb-5">
+            <h2 className="text-xl font-bold text-[var(--ink-900)] mb-4">
               {draft.id ? 'Edit item' : 'Add item'}
             </h2>
+
+            {/* Image uploader */}
+            <div className="mb-4">
+              <span className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-1.5 font-semibold">
+                Photo
+              </span>
+              <div className="flex items-center gap-3">
+                {draft.image_url ? (
+                  <div className="relative w-24 h-24 rounded-2xl overflow-hidden border border-[var(--ink-200)] shrink-0">
+                    <img
+                      src={draft.image_url}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                    {uploading && (
+                      <div className="absolute inset-0 bg-white/70 flex items-center justify-center text-xs">
+                        Uploading…
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="w-24 h-24 rounded-2xl bg-[var(--cream-100)] border-2 border-dashed border-[var(--ink-200)] flex items-center justify-center text-3xl opacity-40 shrink-0">
+                    📷
+                  </div>
+                )}
+                <div className="flex-1 min-w-0 space-y-2">
+                  <label
+                    className={`inline-block cursor-pointer px-4 py-2 rounded-xl font-bold text-sm transition ${
+                      uploading
+                        ? 'bg-[var(--ink-200)] text-[var(--ink-500)]'
+                        : 'bg-[var(--brand-600)] hover:bg-[var(--brand-700)] text-white'
+                    }`}
+                  >
+                    {uploading ? 'Uploading…' : draft.image_url ? 'Change photo' : 'Upload photo'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={uploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        pickImage(f ?? null);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {draft.image_url && !uploading && (
+                    <button
+                      type="button"
+                      onClick={() => setDraft({ ...draft, image_url: '' })}
+                      className="block text-xs text-[var(--ink-500)] hover:text-[var(--brand-600)] font-semibold"
+                    >
+                      Remove photo
+                    </button>
+                  )}
+                  <p className="text-[10px] text-[var(--ink-400)]">
+                    JPG, PNG, WebP or GIF. 5 MB max.
+                  </p>
+                </div>
+              </div>
+            </div>
 
             <Field label="English name">
               <input

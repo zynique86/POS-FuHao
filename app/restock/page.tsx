@@ -296,7 +296,7 @@ function ItemCard({
   return (
     <button
       onClick={onRequest}
-      className={`card-hover text-left rounded-2xl p-4 border transition ${
+      className={`card-hover text-left rounded-2xl border transition overflow-hidden ${
         isPending
           ? 'border-transparent'
           : 'bg-white border-[var(--ink-200)]'
@@ -312,6 +312,17 @@ function ItemCard({
           : { boxShadow: 'var(--shadow-sm)' }
       }
     >
+      {item.image_url && (
+        <div className="aspect-[4/3] w-full overflow-hidden bg-[var(--cream-100)]">
+          <img
+            src={item.image_url}
+            alt=""
+            loading="lazy"
+            className={`w-full h-full object-cover ${isPending ? 'opacity-70' : ''}`}
+          />
+        </div>
+      )}
+      <div className="p-4">
       <div className="flex items-baseline justify-between mb-2">
         <span
           className="text-[10px] uppercase tracking-widest font-bold"
@@ -354,6 +365,7 @@ function ItemCard({
             </span>
           </div>
         )}
+      </div>
       </div>
     </button>
   );

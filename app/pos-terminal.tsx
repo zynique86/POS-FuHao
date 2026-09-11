@@ -411,29 +411,43 @@ function MenuButton({ item, onAdd }: { item: MenuItem; onAdd: () => void }) {
   return (
     <button
       onClick={onAdd}
-      className="card-hover text-left bg-white rounded-2xl p-4 border border-[var(--ink-200)] active:scale-[0.98]"
+      className="card-hover text-left bg-white rounded-2xl border border-[var(--ink-200)] active:scale-[0.98] overflow-hidden flex flex-col"
       style={{ boxShadow: 'var(--shadow-sm)' }}
     >
-      <div className="min-h-[52px]">
-        <h3 className="font-bold text-[var(--ink-900)] leading-snug text-[15px]">
-          {item.name_en}
-        </h3>
-        {item.name_zh && (
-          <p className="text-sm text-[var(--ink-500)] mt-0.5">{item.name_zh}</p>
-        )}
-      </div>
-      <div className="mt-3 flex items-baseline justify-between">
-        <span className="text-[var(--brand-700)] font-mono font-bold">
-          RM {Number(item.price).toFixed(2)}
-        </span>
-        <span
-          className="text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center text-white transition"
-          style={{
-            background: 'linear-gradient(135deg, var(--brand-500), var(--brand-700))',
-          }}
+      {item.image_url && (
+        <div
+          className="aspect-[4/3] w-full overflow-hidden bg-[var(--cream-100)]"
         >
-          +
-        </span>
+          <img
+            src={item.image_url}
+            alt=""
+            loading="lazy"
+            className="w-full h-full object-cover"
+          />
+        </div>
+      )}
+      <div className="p-4 flex-1 flex flex-col">
+        <div className="min-h-[52px]">
+          <h3 className="font-bold text-[var(--ink-900)] leading-snug text-[15px]">
+            {item.name_en}
+          </h3>
+          {item.name_zh && (
+            <p className="text-sm text-[var(--ink-500)] mt-0.5">{item.name_zh}</p>
+          )}
+        </div>
+        <div className="mt-3 flex items-baseline justify-between">
+          <span className="text-[var(--brand-700)] font-mono font-bold">
+            RM {Number(item.price).toFixed(2)}
+          </span>
+          <span
+            className="text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center text-white transition"
+            style={{
+              background: 'linear-gradient(135deg, var(--brand-500), var(--brand-700))',
+            }}
+          >
+            +
+          </span>
+        </div>
       </div>
     </button>
   );
