@@ -5,7 +5,8 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { OrderItem } from '@/lib/types';
+import { fulfillRestock, listPendingRestock } from '@/lib/restock';
+import type { OrderItem, RestockRequest } from '@/lib/types';
 
 type Order = {
   id: number;
@@ -19,6 +20,7 @@ export default function KitchenPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [nowTick, setNowTick] = useState<number>(0);
+  const [restocks, setRestocks] = useState<RestockRequest[]>([]);
 
   useEffect(() => {
     setNowTick(Date.now());
@@ -70,6 +72,31 @@ export default function KitchenPage() {
     await supabase.from('orders').update({ status: 'closed' }).eq('id', id);
   }
 
+  // Restock queue — subscribed live.
+  useEffect(() => {
+    async function loadR() {
+      setRestocks(await listPendingRestock());
+    }
+    loadR();
+    const channel = supabase
+      .channel('kitchen-restock')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'restock_requests' },
+        () => loadR()
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  async function markRestockDone(id: number) {
+    const { data: userRes } = await supabase.auth.getUser();
+    const by = userRes?.user?.email ?? 'kitchen';
+    await fulfillRestock(id, by);
+  }
+
   function ageMinutes(iso: string) {
     if (!nowTick) return 0;
     return Math.floor((nowTick - new Date(iso).getTime()) / 60000);
@@ -99,7 +126,89 @@ export default function KitchenPage() {
 
         {loading && <p className="text-white/60">Loading kitchen…</p>}
 
-        {!loading && orders.length === 0 && (
+        {/* RESTOCK QUEUE — pinned above orders */}
+        {restocks.length > 0 && (
+          <section className="mb-6">
+            <div
+              className="rounded-2xl overflow-hidden border-2"
+              style={{
+                borderColor: 'var(--warn-500)',
+                background:
+                  'linear-gradient(135deg, rgb(234 88 12 / 0.20), rgb(180 83 9 / 0.10))',
+                boxShadow: '0 12px 28px -8px rgb(234 88 12 / 0.30)',
+              }}
+            >
+              <div
+                className="flex items-center justify-between px-5 py-3"
+                style={{
+                  background:
+                    'linear-gradient(90deg, var(--warn-500), var(--brand-700))',
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="relative flex h-3 w-3">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-white opacity-70 animate-ping" />
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-white" />
+                  </span>
+                  <h2 className="text-lg font-bold uppercase tracking-widest text-white">
+                    🔥 Restock queue
+                  </h2>
+                </div>
+                <span className="text-sm font-bold text-white/80 font-mono">
+                  {restocks.length}
+                </span>
+              </div>
+              <ul className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {restocks.map((r) => {
+                  const mins = Math.floor(
+                    (nowTick - new Date(r.requested_at).getTime()) / 60000
+                  );
+                  const old = mins >= 5;
+                  return (
+                    <li
+                      key={r.id}
+                      className={`rounded-xl p-4 flex items-center gap-3 ${
+                        old ? 'bg-[var(--brand-900)]/60' : 'bg-black/30'
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xl font-bold text-white leading-tight">
+                          {r.item_name_snapshot}
+                        </p>
+                        {r.item_name_zh_snapshot && (
+                          <p className="text-base text-white/70">
+                            {r.item_name_zh_snapshot}
+                          </p>
+                        )}
+                        <p className="text-xs text-white/60 mt-1">
+                          {r.qty_wanted ? `${r.qty_wanted} baskets · ` : ''}
+                          {mins < 1 ? 'just now' : mins === 1 ? '1 min ago' : `${mins} min ago`}
+                        </p>
+                        {r.note && (
+                          <p className="text-xs mt-1 px-2 py-1 rounded bg-white/10 text-[var(--gold-300)]">
+                            {r.note}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => markRestockDone(r.id)}
+                        className="shrink-0 text-white font-bold px-4 py-3 rounded-xl"
+                        style={{
+                          background:
+                            'linear-gradient(135deg, var(--jade-500), var(--jade-600))',
+                        }}
+                      >
+                        Done ✓
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </section>
+        )}
+
+        {!loading && orders.length === 0 && restocks.length === 0 && (
           <div className="text-center py-24">
             <div className="text-7xl mb-4 opacity-40">🧾</div>
             <p className="text-xl font-semibold text-white/80">No open orders</p>

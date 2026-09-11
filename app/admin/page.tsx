@@ -23,6 +23,7 @@ export default function AdminPage() {
         <nav className="flex flex-wrap gap-2 no-print">
           <NavCard href="/admin/menu" emoji="🥟" label="Menu" />
           <NavCard href="/admin/z-report" emoji="📋" label="Z-Report" />
+          <NavCard href="/admin/staff" emoji="👤" label="Staff" />
           <NavCard href="/admin/settings" emoji="⚙️" label="Settings" />
         </nav>
       </header>

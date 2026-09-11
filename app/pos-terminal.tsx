@@ -8,7 +8,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { computeBreakdown, sumLines } from '@/lib/pricing';
 import { useSettings } from '@/lib/use-settings';
-import type { MenuItem, ShopSettings } from '@/lib/types';
+import { requestRestock, listPendingRestock } from '@/lib/restock';
+import type { MenuItem, RestockRequest, ShopSettings } from '@/lib/types';
 
 type CartLine = { item: MenuItem; qty: number };
 type ExistingLine = {
@@ -37,6 +38,8 @@ export default function POSTerminal({
   const [category, setCategory] = useState<string>('All');
   const [sending, setSending] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [pendingRestock, setPendingRestock] = useState<RestockRequest[]>([]);
+  const [restockFor, setRestockFor] = useState<MenuItem | null>(null);
 
   // Live menu
   useEffect(() => {
@@ -60,6 +63,32 @@ export default function POSTerminal({
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // Live restock queue — used to badge menu cards that are already
+  // pending, so we don't fire duplicate requests.
+  useEffect(() => {
+    async function load() {
+      setPendingRestock(await listPendingRestock());
+    }
+    load();
+    const channel = supabase
+      .channel('pos-restock')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'restock_requests' },
+        () => load()
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const restockByItemId = useMemo(() => {
+    const m = new Set<number>();
+    pendingRestock.forEach((r) => m.add(r.menu_item_id));
+    return m;
+  }, [pendingRestock]);
 
   // Load existing open order for this table
   useEffect(() => {
@@ -196,19 +225,31 @@ export default function POSTerminal({
       const { data: inserted, error: linesErr } = await supabase
         .from('order_items')
         .insert(lines)
-        .select('id');
+        .select('id, menu_item_id');
       if (linesErr) {
         alert('Could not add items: ' + linesErr.message);
         setSending(false);
         return;
       }
-      const insertedIds = (inserted ?? []).map((r) => r.id);
-      if (insertedIds.length > 0) {
-        await supabase.from('print_jobs').insert({
-          order_id: orderId,
-          kind: 'kitchen',
-          payload: { item_ids: insertedIds },
-        });
+
+      // Route each new line to its station's printer.
+      // Group inserted item IDs by the menu item's station.
+      const byStation = new Map<string, number[]>();
+      const menuById = new Map(items.map((i) => [i.id, i]));
+      for (const row of inserted ?? []) {
+        const menu = menuById.get(row.menu_item_id as number);
+        const station = menu?.station ?? 'kitchen';
+        if (!byStation.has(station)) byStation.set(station, []);
+        byStation.get(station)!.push(row.id as number);
+      }
+      const jobs = [...byStation.entries()].map(([station, item_ids]) => ({
+        order_id: orderId,
+        station,
+        kind: 'kitchen',
+        payload: { item_ids },
+      }));
+      if (jobs.length > 0) {
+        await supabase.from('print_jobs').insert(jobs);
       }
 
       if (existing) {
@@ -269,7 +310,13 @@ export default function POSTerminal({
           {/* Menu grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
             {visibleItems.map((item) => (
-              <MenuButton key={item.id} item={item} onAdd={() => addToCart(item)} />
+              <MenuButton
+                key={item.id}
+                item={item}
+                onAdd={() => addToCart(item)}
+                onRestock={() => setRestockFor(item)}
+                pending={restockByItemId.has(item.id)}
+              />
             ))}
             {visibleItems.length === 0 && (
               <div className="col-span-full py-16 text-center">
@@ -279,6 +326,15 @@ export default function POSTerminal({
             )}
           </div>
         </section>
+
+        {/* Restock modal */}
+        {restockFor && (
+          <RestockModal
+            item={restockFor}
+            onCancel={() => setRestockFor(null)}
+            onDone={() => setRestockFor(null)}
+          />
+        )}
 
         {/* Cart */}
         <aside className="lg:sticky lg:top-[76px] h-fit">
@@ -352,35 +408,206 @@ function PageHeader({
 
 // ─── menu button ──────────────────────────────────────────────────────────
 
-function MenuButton({ item, onAdd }: { item: MenuItem; onAdd: () => void }) {
+function MenuButton({
+  item,
+  onAdd,
+  onRestock,
+  pending,
+}: {
+  item: MenuItem;
+  onAdd: () => void;
+  onRestock: () => void;
+  pending: boolean;
+}) {
   return (
-    <button
-      onClick={onAdd}
-      className="card-hover text-left bg-white rounded-2xl p-4 border border-[var(--ink-200)] active:scale-[0.98]"
+    <div
+      className="card-hover relative bg-white rounded-2xl border border-[var(--ink-200)] overflow-hidden"
       style={{ boxShadow: 'var(--shadow-sm)' }}
     >
-      <div className="min-h-[52px]">
-        <h3 className="font-bold text-[var(--ink-900)] leading-snug text-[15px]">
-          {item.name_en}
-        </h3>
-        {item.name_zh && (
-          <p className="text-sm text-[var(--ink-500)] mt-0.5">{item.name_zh}</p>
+      {/* Corner restock action */}
+      <button
+        onClick={onRestock}
+        aria-label={pending ? 'Restock already requested' : 'Request restock'}
+        title={pending ? 'Restock already requested' : 'Request restock'}
+        className={`absolute top-2 right-2 z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition ${
+          pending
+            ? 'text-white'
+            : 'bg-[var(--ink-100)] text-[var(--ink-500)] hover:bg-[var(--gold-400)] hover:text-black'
+        }`}
+        style={
+          pending
+            ? {
+                background:
+                  'linear-gradient(135deg, var(--warn-500), var(--brand-600))',
+                boxShadow: '0 0 0 4px rgb(234 88 12 / 0.15)',
+              }
+            : undefined
+        }
+      >
+        {pending ? (
+          <span className="relative flex h-3 w-3">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-white opacity-70 animate-ping" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-white" />
+          </span>
+        ) : (
+          '⚠'
         )}
-      </div>
-      <div className="mt-3 flex items-baseline justify-between">
-        <span className="text-[var(--brand-700)] font-mono font-bold">
-          RM {Number(item.price).toFixed(2)}
-        </span>
-        <span
-          className="text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center text-white transition"
+      </button>
+
+      {/* Main tap area = add to cart */}
+      <button
+        onClick={onAdd}
+        className="w-full text-left p-4 active:scale-[0.98]"
+      >
+        <div className="min-h-[52px] pr-8">
+          <h3 className="font-bold text-[var(--ink-900)] leading-snug text-[15px]">
+            {item.name_en}
+          </h3>
+          {item.name_zh && (
+            <p className="text-sm text-[var(--ink-500)] mt-0.5">{item.name_zh}</p>
+          )}
+        </div>
+        <div className="mt-3 flex items-baseline justify-between">
+          <span className="text-[var(--brand-700)] font-mono font-bold">
+            RM {Number(item.price).toFixed(2)}
+          </span>
+          <span
+            className="text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center text-white transition"
+            style={{
+              background: 'linear-gradient(135deg, var(--brand-500), var(--brand-700))',
+            }}
+          >
+            +
+          </span>
+        </div>
+      </button>
+
+      {pending && (
+        <div
+          className="absolute bottom-0 left-0 right-0 text-[10px] font-bold uppercase tracking-widest text-white text-center py-1"
           style={{
-            background: 'linear-gradient(135deg, var(--brand-500), var(--brand-700))',
+            background:
+              'linear-gradient(90deg, var(--warn-500), var(--brand-600))',
           }}
         >
-          +
-        </span>
+          🔥 Restocking…
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── restock modal ────────────────────────────────────────────────────────
+
+function RestockModal({
+  item,
+  onCancel,
+  onDone,
+}: {
+  item: MenuItem;
+  onCancel: () => void;
+  onDone: () => void;
+}) {
+  const [qty, setQty] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      const by = userRes?.user?.email ?? 'staff';
+      const q = qty ? Number(qty) : null;
+      await requestRestock(item, q, note, by);
+      onDone();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to request';
+      setErr(msg);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-[var(--ink-900)]/50 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-3xl max-w-sm w-full p-6 animate-rise"
+        onClick={(e) => e.stopPropagation()}
+        style={{ boxShadow: 'var(--shadow-lg)' }}
+      >
+        <div className="text-center mb-4">
+          <div className="inline-flex w-14 h-14 rounded-2xl items-center justify-center text-2xl mb-2"
+               style={{ background: 'linear-gradient(135deg, var(--warn-500), var(--brand-600))' }}>
+            <span className="text-white">🔥</span>
+          </div>
+          <h2 className="text-xl font-bold text-[var(--ink-900)]">Restock request</h2>
+          <p className="text-sm text-[var(--ink-500)] mt-1">
+            Kitchen will be alerted and a slip will print.
+          </p>
+        </div>
+
+        <div className="bg-[var(--cream-100)] rounded-2xl p-4 mb-4 text-center">
+          <p className="text-lg font-bold text-[var(--ink-900)]">{item.name_en}</p>
+          {item.name_zh && (
+            <p className="text-sm text-[var(--ink-500)]">{item.name_zh}</p>
+          )}
+        </div>
+
+        <label className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-1.5 font-semibold">
+          Quantity wanted (optional)
+        </label>
+        <input
+          type="number"
+          inputMode="numeric"
+          value={qty}
+          onChange={(e) => setQty(e.target.value)}
+          placeholder="e.g. 5 baskets"
+          className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl mb-3 font-mono focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+          autoFocus
+        />
+
+        <label className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-1.5 font-semibold">
+          Note (optional)
+        </label>
+        <input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="e.g. urgent, table waiting"
+          className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl mb-4 focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+        />
+
+        {err && (
+          <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] text-[var(--brand-700)] p-2 rounded-xl mb-3 text-sm">
+            {err}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="bg-[var(--cream-100)] hover:bg-[var(--cream-200)] text-[var(--ink-800)] font-bold py-3 rounded-2xl"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={busy}
+            className="text-white font-bold py-3 rounded-2xl disabled:opacity-60"
+            style={{
+              background: 'linear-gradient(135deg, var(--warn-500), var(--brand-600))',
+              boxShadow: '0 10px 24px -8px rgb(234 88 12 / 0.35)',
+            }}
+          >
+            {busy ? 'Sending…' : '🔥 Send to kitchen'}
+          </button>
+        </div>
       </div>
-    </button>
+    </div>
   );
 }
 

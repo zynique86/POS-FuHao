@@ -4,6 +4,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import {
+  fetchOpenShift,
+  openShift,
+  closeShift,
+  todayISODate,
+  type Shift,
+} from '@/lib/shifts';
 import type { Order as BaseOrder, OrderItem, Payment, PayMethod } from '@/lib/types';
 
 type Order = BaseOrder & { items: OrderItem[]; payments: Payment[] };
@@ -13,13 +20,21 @@ type Screen =
   | { kind: 'menu'; orderId: number }
   | { kind: 'pay'; orderId: number; amount: number; label?: string }
   | { kind: 'split'; orderId: number }
-  | { kind: 'void'; orderId: number; itemId: number };
+  | { kind: 'void'; orderId: number; itemId: number }
+  | { kind: 'refund'; orderId: number }
+  | { kind: 'openShift' }
+  | { kind: 'closeShift' };
 
 export default function CashierPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [paidToday, setPaidToday] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<Screen>({ kind: 'closed' });
+  const [shift, setShift] = useState<Shift | null>(null);
+
+  async function refreshShift() {
+    setShift(await fetchOpenShift(todayISODate()));
+  }
 
   async function loadAll() {
     const [openRes, paidRes] = await Promise.all([
@@ -63,16 +78,26 @@ export default function CashierPage() {
 
   useEffect(() => {
     loadAll();
+    refreshShift();
     const channel = supabase
       .channel('cashier')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => loadAll())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => loadAll())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shift_opens' }, () => refreshShift())
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // Cash sales this shift → used for expected drawer close.
+  const cashSalesToday = useMemo(() => {
+    return paidToday.reduce((s, o) => {
+      const cashPay = o.payments.find((p) => p.method === 'cash');
+      return s + (cashPay ? Number(cashPay.amount) : 0);
+    }, 0);
+  }, [paidToday]);
 
   const activeOrder =
     screen.kind === 'closed'
@@ -97,6 +122,13 @@ export default function CashierPage() {
           <StatChip label="Paid today" value={paidToday.length} />
         </div>
       </header>
+
+      <ShiftBanner
+        shift={shift}
+        cashSalesToday={cashSalesToday}
+        onOpen={() => setScreen({ kind: 'openShift' })}
+        onClose={() => setScreen({ kind: 'closeShift' })}
+      />
 
       {loading ? (
         <p className="text-[var(--ink-500)]">Loading…</p>
@@ -153,10 +185,12 @@ export default function CashierPage() {
             await supabase.from('print_jobs').insert({
               order_id: activeOrder.id,
               kind: 'receipt',
+              station: 'cashier',
               payload: { reprint: true },
             });
             setScreen({ kind: 'closed' });
           }}
+          onRefund={() => setScreen({ kind: 'refund', orderId: activeOrder.id })}
         />
       )}
 
@@ -188,7 +222,404 @@ export default function CashierPage() {
           onDone={() => setScreen({ kind: 'menu', orderId: activeOrder.id })}
         />
       )}
+
+      {activeOrder && screen.kind === 'refund' && (
+        <RefundModal
+          order={activeOrder}
+          onCancel={() => setScreen({ kind: 'menu', orderId: activeOrder.id })}
+          onDone={() => setScreen({ kind: 'closed' })}
+        />
+      )}
+
+      {screen.kind === 'openShift' && (
+        <OpenShiftModal
+          onCancel={() => setScreen({ kind: 'closed' })}
+          onDone={async () => {
+            await refreshShift();
+            setScreen({ kind: 'closed' });
+          }}
+        />
+      )}
+
+      {screen.kind === 'closeShift' && shift && (
+        <CloseShiftModal
+          shift={shift}
+          cashSalesToday={cashSalesToday}
+          onCancel={() => setScreen({ kind: 'closed' })}
+          onDone={async () => {
+            await refreshShift();
+            setScreen({ kind: 'closed' });
+          }}
+        />
+      )}
     </main>
+  );
+}
+
+// ─── shift banner ─────────────────────────────────────────────────────────
+
+function ShiftBanner({
+  shift,
+  cashSalesToday,
+  onOpen,
+  onClose,
+}: {
+  shift: Shift | null;
+  cashSalesToday: number;
+  onOpen: () => void;
+  onClose: () => void;
+}) {
+  if (!shift) {
+    return (
+      <div
+        className="mb-6 rounded-2xl p-4 md:p-5 flex flex-wrap items-center justify-between gap-3"
+        style={{
+          background: 'linear-gradient(135deg, var(--cream-100), var(--cream-200))',
+          border: '1px solid var(--cream-300)',
+        }}
+      >
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.25em] text-[var(--ink-500)] font-semibold">
+            No shift open
+          </p>
+          <p className="text-sm text-[var(--ink-700)] mt-0.5">
+            Enter your opening cash float to start tracking the drawer.
+          </p>
+        </div>
+        <button
+          onClick={onOpen}
+          className="text-white font-bold px-5 py-3 rounded-xl"
+          style={{
+            background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
+            boxShadow: 'var(--shadow-brand)',
+          }}
+        >
+          Open shift
+        </button>
+      </div>
+    );
+  }
+
+  const expected = Number(shift.opening_float) + cashSalesToday;
+  const opened = new Date(shift.opened_at).toLocaleTimeString('en-MY', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  return (
+    <div
+      className="mb-6 rounded-2xl p-4 md:p-5 grid grid-cols-2 md:grid-cols-4 gap-4"
+      style={{
+        background: 'linear-gradient(135deg, var(--brand-50), var(--cream-100))',
+        border: '1px solid var(--brand-100)',
+      }}
+    >
+      <div>
+        <p className="text-[10px] uppercase tracking-widest text-[var(--ink-500)] font-semibold">
+          Shift opened
+        </p>
+        <p className="font-bold text-[var(--ink-900)] mt-0.5">{opened}</p>
+        {shift.opened_by && (
+          <p className="text-xs text-[var(--ink-500)]">by {shift.opened_by}</p>
+        )}
+      </div>
+      <div>
+        <p className="text-[10px] uppercase tracking-widest text-[var(--ink-500)] font-semibold">
+          Opening float
+        </p>
+        <p className="font-mono font-bold text-[var(--ink-900)] mt-0.5">
+          RM {Number(shift.opening_float).toFixed(2)}
+        </p>
+      </div>
+      <div>
+        <p className="text-[10px] uppercase tracking-widest text-[var(--ink-500)] font-semibold">
+          Cash sales
+        </p>
+        <p className="font-mono font-bold text-[var(--brand-700)] mt-0.5">
+          RM {cashSalesToday.toFixed(2)}
+        </p>
+      </div>
+      <div className="flex items-center justify-end gap-3">
+        <div className="text-right">
+          <p className="text-[10px] uppercase tracking-widest text-[var(--ink-500)] font-semibold">
+            Expected in drawer
+          </p>
+          <p className="font-mono font-bold text-[var(--ink-900)] mt-0.5">
+            RM {expected.toFixed(2)}
+          </p>
+        </div>
+        <button
+          onClick={onClose}
+          className="bg-[var(--ink-800)] hover:bg-[var(--ink-900)] text-white font-bold px-4 py-2.5 rounded-xl text-sm"
+        >
+          Close shift
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── open shift modal ─────────────────────────────────────────────────────
+
+function OpenShiftModal({ onCancel, onDone }: { onCancel: () => void; onDone: () => void }) {
+  const [float, setFloat] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    const n = Number(float);
+    if (!Number.isFinite(n) || n < 0) return setErr('Enter a valid float amount');
+    setBusy(true);
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      const by = userRes?.user?.email ?? 'staff';
+      await openShift(n, by);
+      onDone();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to open shift';
+      setErr(msg);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ModalShell onClose={onCancel} title="Open shift" sub="Enter the opening cash float">
+      <F label="Opening cash float (RM)">
+        <input
+          type="number"
+          step="0.05"
+          value={float}
+          onChange={(e) => setFloat(e.target.value)}
+          placeholder="200.00"
+          className="w-full px-4 py-4 border border-[var(--ink-200)] rounded-2xl font-mono text-3xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+          autoFocus
+        />
+      </F>
+      {err && (
+        <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] text-[var(--brand-700)] p-2 rounded-xl mb-4 text-sm">
+          {err}
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <SecondaryBtn onClick={onCancel} disabled={busy}>Cancel</SecondaryBtn>
+        <PrimaryBtn onClick={submit} disabled={busy}>
+          {busy ? 'Opening…' : 'Open shift'}
+        </PrimaryBtn>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ─── close shift modal ────────────────────────────────────────────────────
+
+function CloseShiftModal({
+  shift,
+  cashSalesToday,
+  onCancel,
+  onDone,
+}: {
+  shift: Shift;
+  cashSalesToday: number;
+  onCancel: () => void;
+  onDone: () => void;
+}) {
+  const [count, setCount] = useState('');
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const expected = Number(shift.opening_float) + cashSalesToday;
+  const counted = Number(count) || 0;
+  const variance = count ? counted - expected : 0;
+
+  async function submit() {
+    if (!count) return setErr('Enter the drawer count');
+    setBusy(true);
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      const by = userRes?.user?.email ?? 'staff';
+      await closeShift(shift.id, counted, cashSalesToday, by, notes.trim() || undefined);
+      onDone();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to close shift';
+      setErr(msg);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ModalShell onClose={onCancel} title="Close shift" sub="Count the drawer, compare to expected">
+      <div className="bg-[var(--cream-100)] rounded-2xl p-4 mb-4 space-y-1 text-sm">
+        <div className="flex justify-between text-[var(--ink-600)]">
+          <span>Opening float</span>
+          <span className="font-mono">RM {Number(shift.opening_float).toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between text-[var(--ink-600)]">
+          <span>Cash sales</span>
+          <span className="font-mono">RM {cashSalesToday.toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between font-bold text-[var(--ink-900)] border-t border-[var(--cream-300)] pt-1 mt-1">
+          <span>Expected in drawer</span>
+          <span className="font-mono">RM {expected.toFixed(2)}</span>
+        </div>
+      </div>
+
+      <F label="Counted in drawer (RM)">
+        <input
+          type="number"
+          step="0.05"
+          value={count}
+          onChange={(e) => setCount(e.target.value)}
+          className="w-full px-4 py-4 border border-[var(--ink-200)] rounded-2xl font-mono text-3xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+          autoFocus
+        />
+      </F>
+
+      {count && (
+        <div
+          className={`rounded-2xl p-3 mb-4 text-center ${
+            Math.abs(variance) < 0.05
+              ? 'bg-[var(--jade-100)] text-[var(--jade-600)]'
+              : 'bg-[var(--brand-50)] text-[var(--brand-700)]'
+          }`}
+        >
+          <p className="text-xs uppercase tracking-widest font-semibold">Variance</p>
+          <p className="text-2xl font-bold font-mono">
+            {variance > 0 ? '+' : ''}RM {variance.toFixed(2)}
+          </p>
+        </div>
+      )}
+
+      <F label="Notes (optional)">
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          placeholder="e.g. RM10 paid out for coriander"
+          className="w-full px-3 py-2 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+        />
+      </F>
+
+      {err && (
+        <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] text-[var(--brand-700)] p-2 rounded-xl mb-4 text-sm">
+          {err}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <SecondaryBtn onClick={onCancel} disabled={busy}>Cancel</SecondaryBtn>
+        <PrimaryBtn onClick={submit} disabled={busy}>
+          {busy ? 'Closing…' : 'Close shift'}
+        </PrimaryBtn>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ─── refund modal ─────────────────────────────────────────────────────────
+
+function RefundModal({
+  order,
+  onCancel,
+  onDone,
+}: {
+  order: Order;
+  onCancel: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function confirm() {
+    if (!reason.trim()) return setErr('Reason is required for the audit trail');
+    setBusy(true);
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      const by = userRes?.user?.email ?? 'staff';
+      const amount = Number(order.total);
+
+      // Insert a negative payment as the refund record
+      const { error: payErr } = await supabase.from('payments').insert({
+        order_id: order.id,
+        method: order.payment_method ?? 'cash',
+        amount: -amount,
+        received: -amount,
+        change_given: 0,
+        status: 'refunded',
+      });
+      if (payErr) throw payErr;
+
+      // Mark order refunded
+      await supabase
+        .from('orders')
+        .update({ status: 'refunded' })
+        .eq('id', order.id);
+
+      // Enqueue a refund slip print — goes to the counter printer.
+      await supabase.from('print_jobs').insert({
+        order_id: order.id,
+        kind: 'refund',
+        station: 'cashier',
+        payload: { reason: reason.trim(), by, amount },
+      });
+
+      onDone();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Refund failed';
+      setErr(msg);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ModalShell onClose={onCancel} title="Refund order" sub={`Table ${order.table_number} · Order #${order.id}`}>
+      <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] rounded-2xl p-4 mb-4 text-center">
+        <p className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold">
+          Refunding
+        </p>
+        <p className="text-4xl font-bold font-mono text-[var(--brand-700)] mt-1">
+          RM {Number(order.total).toFixed(2)}
+        </p>
+        <p className="text-xs text-[var(--ink-500)] mt-1">
+          Original method: {order.payment_method ?? 'cash'}
+        </p>
+      </div>
+
+      <F label="Reason (kept for the audit)">
+        <input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. customer allergic reaction, wrong order"
+          className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+          autoFocus
+        />
+      </F>
+
+      {err && (
+        <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] text-[var(--brand-700)] p-2 rounded-xl mb-4 text-sm">
+          {err}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <SecondaryBtn onClick={onCancel} disabled={busy}>Cancel</SecondaryBtn>
+        <PrimaryBtn onClick={confirm} disabled={busy}>
+          {busy ? 'Refunding…' : 'Confirm refund'}
+        </PrimaryBtn>
+      </div>
+    </ModalShell>
+  );
+}
+
+function F({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block mb-3">
+      <span className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-1.5 font-semibold">
+        {label}
+      </span>
+      {children}
+    </label>
   );
 }
 
@@ -294,6 +725,7 @@ function OrderMenuModal({
   onSplit,
   onVoidItem,
   onReprint,
+  onRefund,
 }: {
   order: Order;
   onClose: () => void;
@@ -301,6 +733,7 @@ function OrderMenuModal({
   onSplit: () => void;
   onVoidItem: (itemId: number) => void;
   onReprint: () => void;
+  onRefund: () => void;
 }) {
   const isPaid = !!order.paid_at;
   const paidSoFar = order.payments.reduce((s, p) => s + Number(p.amount), 0);
@@ -378,6 +811,19 @@ function OrderMenuModal({
       ) : (
         <div className="space-y-2">
           <PrimaryBtn onClick={onReprint}>🖨️ Reprint receipt</PrimaryBtn>
+          {order.status !== 'refunded' && (
+            <button
+              onClick={onRefund}
+              className="w-full font-bold py-3 rounded-2xl transition text-[var(--brand-700)] bg-[var(--brand-50)] hover:bg-[var(--brand-100)] border border-[var(--brand-200)]"
+            >
+              ↩ Refund order
+            </button>
+          )}
+          {order.status === 'refunded' && (
+            <p className="text-center text-sm text-[var(--brand-700)] bg-[var(--brand-50)] py-2 rounded-xl font-semibold">
+              This order has been refunded.
+            </p>
+          )}
           <SecondaryBtn onClick={onClose}>Close</SecondaryBtn>
         </div>
       )}
@@ -444,6 +890,7 @@ function PayModal({
       await supabase.from('print_jobs').insert({
         order_id: order.id,
         kind: 'receipt',
+        station: 'cashier',
         payload: { reprint: false },
       });
     }
@@ -679,9 +1126,19 @@ function VoidModal({
       total: b.total,
     }).eq('id', order.id);
 
+    // Void notice — route to the station that was cooking the item.
+    const menuItemId = item?.menu_item_id ?? -1;
+    const { data: menuRow } = await supabase
+      .from('menu_items')
+      .select('station')
+      .eq('id', menuItemId)
+      .maybeSingle();
+    const voidStation = (menuRow?.station as 'kitchen' | 'bar') ?? 'kitchen';
+
     await supabase.from('print_jobs').insert({
       order_id: order.id,
       kind: 'void',
+      station: voidStation,
       payload: { item_id: itemId, reason: reason || 'no reason given' },
     });
 

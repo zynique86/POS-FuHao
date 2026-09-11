@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { MenuItem } from '@/lib/types';
+import type { MenuItem, PrintStation } from '@/lib/types';
 
 type Draft = {
   id?: number;
@@ -14,6 +14,7 @@ type Draft = {
   category: string;
   sort_order: string;
   is_available: boolean;
+  station: PrintStation;
 };
 const EMPTY: Draft = {
   name_en: '',
@@ -22,6 +23,7 @@ const EMPTY: Draft = {
   category: 'Steamed',
   sort_order: '0',
   is_available: true,
+  station: 'kitchen',
 };
 
 export default function AdminMenuPage() {
@@ -67,6 +69,7 @@ export default function AdminMenuPage() {
       category: item.category || 'Other',
       sort_order: String(item.sort_order ?? 0),
       is_available: item.is_available !== false,
+      station: item.station ?? 'kitchen',
     });
     setErr(null);
   }
@@ -85,6 +88,7 @@ export default function AdminMenuPage() {
       category: draft.category.trim() || 'Other',
       sort_order: Number(draft.sort_order) || 0,
       is_available: draft.is_available,
+      station: draft.station,
     };
     const { error } = draft.id
       ? await supabase.from('menu_items').update(payload).eq('id', draft.id)
@@ -176,6 +180,16 @@ export default function AdminMenuPage() {
                       {item.name_zh && (
                         <div className="text-sm text-[var(--ink-500)]">{item.name_zh}</div>
                       )}
+                    </div>
+                    <div
+                      className="text-[10px] px-2 py-1 rounded-lg font-bold uppercase tracking-widest"
+                      style={
+                        item.station === 'bar'
+                          ? { background: 'rgb(6 95 70 / 0.15)', color: 'var(--jade-600)' }
+                          : { background: 'var(--brand-50)', color: 'var(--brand-700)' }
+                      }
+                    >
+                      {item.station === 'bar' ? '🫖 Bar' : '👨‍🍳 Kitchen'}
                     </div>
                     <div className="font-mono text-[var(--brand-700)] font-semibold w-24 text-right">
                       RM {Number(item.price).toFixed(2)}
@@ -278,6 +292,54 @@ export default function AdminMenuPage() {
                 <option value="Dessert" />
                 <option value="Other" />
               </datalist>
+            </Field>
+
+            <Field label="Prep station (which printer)">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDraft({ ...draft, station: 'kitchen' })}
+                  className={`py-3 rounded-xl font-bold text-sm transition ${
+                    draft.station === 'kitchen'
+                      ? 'text-white'
+                      : 'bg-[var(--cream-100)] text-[var(--ink-700)] hover:bg-[var(--cream-200)]'
+                  }`}
+                  style={
+                    draft.station === 'kitchen'
+                      ? {
+                          background:
+                            'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
+                          boxShadow: 'var(--shadow-brand)',
+                        }
+                      : undefined
+                  }
+                >
+                  👨‍🍳 Kitchen · 廚房
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraft({ ...draft, station: 'bar' })}
+                  className={`py-3 rounded-xl font-bold text-sm transition ${
+                    draft.station === 'bar'
+                      ? 'text-white'
+                      : 'bg-[var(--cream-100)] text-[var(--ink-700)] hover:bg-[var(--cream-200)]'
+                  }`}
+                  style={
+                    draft.station === 'bar'
+                      ? {
+                          background:
+                            'linear-gradient(135deg, var(--jade-500), var(--jade-600))',
+                          boxShadow: '0 10px 24px -8px rgb(5 150 105 / 0.35)',
+                        }
+                      : undefined
+                  }
+                >
+                  🫖 Bar · 水吧
+                </button>
+              </div>
+              <span className="text-xs text-[var(--ink-400)]">
+                Food goes to the kitchen printer; drinks go to the bar printer.
+              </span>
             </Field>
 
             <label className="flex items-center gap-2 mb-5 text-sm text-[var(--ink-800)] cursor-pointer">

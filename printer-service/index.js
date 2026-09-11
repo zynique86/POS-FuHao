@@ -1,21 +1,28 @@
 // Printer service — runs continuously on a Raspberry Pi or counter mini-PC.
 //
-// All printing is driven by inserts into the `print_jobs` table:
-//   kind = 'kitchen'  → payload: {item_ids: [..]}  (the batch to print)
-//   kind = 'receipt'  → full itemised bill for the order
-//   kind = 'void'     → payload: {item_id, reason} — void notice to kitchen
+// Multi-station routing:
+//   station = 'kitchen' → kitchen printer (food orders + food restock + food voids)
+//   station = 'bar'     → bar printer     (drinks + drink restock + drink voids)
+//   station = 'cashier' → counter printer (customer receipts + refunds)
 //
-// The printer marks each job as printed (sets printed_at) after success.
-// If PRINTER_IP is unset, jobs are logged to the console instead.
+// Each station's printer IP goes in .env. If a station has no IP set, the
+// legacy PRINTER_IP is used; if there's no PRINTER_IP either, tickets are
+// logged to the console (useful for development).
 
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const { ThermalPrinter, PrinterTypes } = require('node-thermal-printer');
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-const PRINTER_IP = process.env.PRINTER_IP;
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const FALLBACK_SHOP_NAME = process.env.SHOP_NAME || 'DIM SUM SHOP';
+
+const LEGACY_PRINTER_IP = process.env.PRINTER_IP;
+const PRINTERS = {
+  kitchen: process.env.KITCHEN_PRINTER_IP || LEGACY_PRINTER_IP,
+  bar:     process.env.BAR_PRINTER_IP     || LEGACY_PRINTER_IP,
+  cashier: process.env.CASHIER_PRINTER_IP || LEGACY_PRINTER_IP,
+};
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('❌ Missing SUPABASE_URL or SUPABASE_ANON_KEY in .env');
@@ -47,20 +54,36 @@ async function refreshSettings() {
   }
 }
 
-// --- printer helper --------------------------------------------------------
-function newPrinter() {
+// --- printer helpers -------------------------------------------------------
+function printerFor(station) {
+  const ip = PRINTERS[station];
+  if (!ip) return null;
   return new ThermalPrinter({
     type: PrinterTypes.EPSON,
-    interface: `tcp://${PRINTER_IP}`,
+    interface: `tcp://${ip}`,
   });
 }
 
-// --- job dispatcher --------------------------------------------------------
+function stationLabel(station) {
+  return station === 'kitchen' ? '📄 KITCHEN'
+       : station === 'bar'     ? '🫖 BAR'
+       : station === 'cashier' ? '🧾 CASHIER'
+       : `📦 ${station.toUpperCase()}`;
+}
+
+function consoleFallback(station, kind, lines) {
+  console.log(`\n${stationLabel(station)} · ${kind.toUpperCase()} (would print — no IP configured):\n` + lines.join('\n') + '\n');
+}
+
+// --- dispatcher ------------------------------------------------------------
 async function processJob(job) {
   try {
-    if (job.kind === 'kitchen') await handleKitchen(job);
-    else if (job.kind === 'receipt') await handleReceipt(job);
-    else if (job.kind === 'void') await handleVoid(job);
+    const station = job.station || 'kitchen';
+    if (job.kind === 'kitchen') await handleKitchen(job, station);
+    else if (job.kind === 'receipt') await handleReceipt(job, station);
+    else if (job.kind === 'void') await handleVoid(job, station);
+    else if (job.kind === 'refund') await handleRefund(job, station);
+    else if (job.kind === 'restock') await handleRestock(job, station);
     else console.warn('Unknown job kind:', job.kind);
 
     await supabase
@@ -68,12 +91,12 @@ async function processJob(job) {
       .update({ printed_at: new Date().toISOString() })
       .eq('id', job.id);
   } catch (err) {
-    console.error(`❌ Job ${job.id} (${job.kind}) failed:`, err.message);
+    console.error(`❌ Job ${job.id} (${job.kind}/${job.station}) failed:`, err.message);
   }
 }
 
-// --- KITCHEN TICKET --------------------------------------------------------
-async function handleKitchen(job) {
+// --- KITCHEN / BAR TICKET --------------------------------------------------
+async function handleKitchen(job, station) {
   const itemIds = job.payload?.item_ids ?? [];
   if (!job.order_id || itemIds.length === 0) return;
 
@@ -84,10 +107,12 @@ async function handleKitchen(job) {
   if (!order || !items || items.length === 0) return;
 
   const timeStr = new Date().toLocaleTimeString('en-MY');
+  const stationName = station === 'bar' ? 'BAR / 水吧' : 'KITCHEN / 廚房';
   const lines = [
     '===================================',
-    `   TABLE ${order.table_number}   Order #${order.id}`,
+    `           ${stationName}`,
     '===================================',
+    `TABLE ${order.table_number}   Order #${order.id}`,
     timeStr,
     '-----------------------------------',
     ...items.flatMap((i) => {
@@ -98,18 +123,16 @@ async function handleKitchen(job) {
     '===================================',
   ];
 
-  if (!PRINTER_IP) {
-    console.log('\n📄 KITCHEN TICKET (would print):\n' + lines.join('\n') + '\n');
-    return;
-  }
+  const printer = printerFor(station);
+  if (!printer) return consoleFallback(station, 'kitchen', lines);
 
-  const printer = newPrinter();
   printer.alignCenter();
-  printer.setTextSize(1, 1);
   printer.bold(true);
-  printer.println(`TABLE ${order.table_number}`);
+  printer.setTextSize(1, 1);
+  printer.println(stationName);
   printer.setTextNormal();
   printer.bold(false);
+  printer.println(`TABLE ${order.table_number}`);
   printer.println(`Order #${order.id}`);
   printer.println(timeStr);
   printer.drawLine();
@@ -122,11 +145,11 @@ async function handleKitchen(job) {
   });
   printer.cut();
   await printer.execute();
-  console.log(`🖨️  Kitchen ticket printed for order #${order.id} (${items.length} items)`);
+  console.log(`🖨️  ${station} ticket printed for order #${order.id} (${items.length} items)`);
 }
 
 // --- CUSTOMER RECEIPT ------------------------------------------------------
-async function handleReceipt(job) {
+async function handleReceipt(job, station) {
   if (!job.order_id) return;
 
   const [{ data: order }, { data: allItems }] = await Promise.all([
@@ -135,7 +158,6 @@ async function handleReceipt(job) {
   ]);
   if (!order) return;
 
-  // exclude voided items from the receipt
   const items = (allItems ?? []).filter((i) => !i.voided_at);
 
   const subtotal = Number(order.subtotal ?? order.total) || 0;
@@ -144,7 +166,7 @@ async function handleReceipt(job) {
   const rounding = Number(order.rounding) || 0;
   const total = Number(order.total) || 0;
   const when = new Date().toLocaleString('en-MY');
-  const isReprint = !!order.paid_at;
+  const isReprint = !!(order.paid_at && job.payload?.reprint);
 
   const lines = [
     '===================================',
@@ -154,7 +176,7 @@ async function handleReceipt(job) {
     '===================================',
     `Table ${order.table_number}   Order #${order.id}`,
     when,
-    ...(isReprint && job.payload?.reprint ? ['*** REPRINT ***'] : []),
+    ...(isReprint ? ['*** REPRINT ***'] : []),
     '-----------------------------------',
   ];
   items.forEach((i) => {
@@ -173,12 +195,9 @@ async function handleReceipt(job) {
   lines.push('       Thank you — 多謝');
   lines.push('===================================');
 
-  if (!PRINTER_IP) {
-    console.log('\n🧾 RECEIPT (would print):\n' + lines.join('\n') + '\n');
-    return;
-  }
+  const printer = printerFor(station);
+  if (!printer) return consoleFallback(station, 'receipt', lines);
 
-  const printer = newPrinter();
   printer.alignCenter();
   printer.bold(true);
   printer.println(settings.shop_name);
@@ -187,7 +206,7 @@ async function handleReceipt(job) {
   settings.address.split('\n').filter(Boolean).forEach((l) => printer.println(l));
   printer.println(`Table ${order.table_number} — Order #${order.id}`);
   printer.println(when);
-  if (isReprint && job.payload?.reprint) {
+  if (isReprint) {
     printer.bold(true);
     printer.println('*** REPRINT ***');
     printer.bold(false);
@@ -220,7 +239,7 @@ async function handleReceipt(job) {
 }
 
 // --- VOID NOTICE -----------------------------------------------------------
-async function handleVoid(job) {
+async function handleVoid(job, station) {
   const itemId = job.payload?.item_id;
   if (!itemId) return;
   const { data: item } = await supabase.from('order_items').select('*').eq('id', itemId).single();
@@ -233,19 +252,16 @@ async function handleVoid(job) {
     '            *** VOID ***',
     '###################################',
     time,
-    `Table ${item.order_id ? '' : ''}Order #${item.order_id}`,
+    `Order #${item.order_id}`,
     `${item.qty}x  ${item.name_snapshot}`,
     ...(item.name_zh_snapshot ? [`     ${item.name_zh_snapshot}`] : []),
     `Reason: ${reason}`,
     '###################################',
   ];
 
-  if (!PRINTER_IP) {
-    console.log('\n🚫 VOID (would print):\n' + lines.join('\n') + '\n');
-    return;
-  }
+  const printer = printerFor(station);
+  if (!printer) return consoleFallback(station, 'void', lines);
 
-  const printer = newPrinter();
   printer.alignCenter();
   printer.bold(true);
   printer.setTextSize(1, 1);
@@ -260,7 +276,112 @@ async function handleVoid(job) {
   printer.println(`Reason: ${reason}`);
   printer.cut();
   await printer.execute();
-  console.log(`🚫 VOID ticket printed for item #${item.id}`);
+  console.log(`🚫 VOID ticket printed for item #${item.id} at ${station}`);
+}
+
+// --- REFUND SLIP -----------------------------------------------------------
+async function handleRefund(job, station) {
+  if (!job.order_id) return;
+  const { data: order } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('id', job.order_id)
+    .single();
+  if (!order) return;
+
+  const amount = Number(job.payload?.amount ?? order.total) || 0;
+  const reason = job.payload?.reason || 'no reason given';
+  const by = job.payload?.by || 'staff';
+  const when = new Date().toLocaleString('en-MY');
+
+  const lines = [
+    '###################################',
+    '           *** REFUND ***',
+    '###################################',
+    when,
+    `Table ${order.table_number}   Order #${order.id}`,
+    `Amount refunded:   RM ${amount.toFixed(2)}`,
+    `Original method:   ${order.payment_method || 'cash'}`,
+    `Reason: ${reason}`,
+    `By: ${by}`,
+    '###################################',
+  ];
+
+  const printer = printerFor(station);
+  if (!printer) return consoleFallback(station, 'refund', lines);
+
+  printer.alignCenter();
+  printer.bold(true);
+  printer.setTextSize(1, 1);
+  printer.println('*** REFUND ***');
+  printer.setTextNormal();
+  printer.bold(false);
+  printer.println(when);
+  printer.println(`Order #${order.id}`);
+  printer.drawLine();
+  printer.alignLeft();
+  row(printer, 'Amount refunded', amount);
+  printer.println(`Method: ${order.payment_method || 'cash'}`);
+  printer.println(`Reason: ${reason}`);
+  printer.println(`By: ${by}`);
+  printer.drawLine();
+  printer.cut();
+  await printer.execute();
+  console.log(`↩️  Refund slip printed for order #${order.id}`);
+}
+
+// --- RESTOCK SLIP ----------------------------------------------------------
+async function handleRestock(job, station) {
+  const p = job.payload || {};
+  const name = p.item_name || 'unknown item';
+  const nameZh = p.item_name_zh;
+  const qty = p.qty_wanted;
+  const note = p.note;
+  const by = p.by;
+  const time = new Date().toLocaleTimeString('en-MY');
+  const stationName = station === 'bar' ? 'BAR / 水吧' : 'KITCHEN / 廚房';
+
+  const lines = [
+    '###################################',
+    '         *** RESTOCK ***',
+    `         ${stationName}`,
+    '###################################',
+    time,
+    '',
+    `Item: ${name}`,
+    ...(nameZh ? [`     ${nameZh}`] : []),
+    ...(qty ? [`Qty:  ${qty}`] : []),
+    ...(note ? [`Note: ${note}`] : []),
+    ...(by ? [`By:   ${by}`] : []),
+    '###################################',
+  ];
+
+  const printer = printerFor(station);
+  if (!printer) return consoleFallback(station, 'restock', lines);
+
+  printer.alignCenter();
+  printer.bold(true);
+  printer.setTextSize(1, 2);
+  printer.println('*** RESTOCK ***');
+  printer.setTextNormal();
+  printer.bold(false);
+  printer.println(stationName);
+  printer.println(time);
+  printer.drawLine();
+  printer.alignLeft();
+  printer.bold(true);
+  printer.setTextSize(1, 1);
+  printer.println(name);
+  printer.setTextNormal();
+  if (nameZh) printer.println(nameZh);
+  printer.bold(false);
+  if (qty) printer.println(`Qty:  ${qty}`);
+  if (note) printer.println(`Note: ${note}`);
+  if (by) printer.println(`By:   ${by}`);
+  printer.drawLine();
+  printer.cut();
+  await printer.execute();
+  console.log(`🔥 Restock slip printed for ${name} at ${station}`);
 }
 
 function row(printer, label, value) {
@@ -270,7 +391,7 @@ function row(printer, label, value) {
   ]);
 }
 
-// --- catch-up: print any jobs missed while the service was offline --------
+// --- catch-up --------------------------------------------------------------
 async function catchUp() {
   const { data: pending } = await supabase
     .from('print_jobs')
@@ -288,11 +409,9 @@ async function main() {
 
   console.log('🥟 Printer service starting…');
   console.log(`   Shop: ${settings.shop_name}`);
-  console.log(
-    PRINTER_IP
-      ? `   Printer IP: ${PRINTER_IP}`
-      : '   No PRINTER_IP set — tickets will be logged to console only'
-  );
+  console.log(`   Kitchen printer: ${PRINTERS.kitchen || '(not set — will log)'}`);
+  console.log(`   Bar printer:     ${PRINTERS.bar     || '(not set — will log)'}`);
+  console.log(`   Cashier printer: ${PRINTERS.cashier || '(not set — will log)'}`);
 
   await catchUp();
 
