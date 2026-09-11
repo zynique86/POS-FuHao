@@ -13,6 +13,7 @@ import type { MenuItem, ShopSettings } from '@/lib/types';
 type CartLine = { item: MenuItem; qty: number };
 type ExistingLine = {
   id: number;
+  menu_item_id: number | null;
   name_en: string;
   name_zh: string | null;
   qty: number;
@@ -79,7 +80,7 @@ export default function POSTerminal({
 
       const { data: rows } = await supabase
         .from('order_items')
-        .select('id, name_snapshot, name_zh_snapshot, qty, price_at_time, kitchen_status, voided_at')
+        .select('id, menu_item_id, name_snapshot, name_zh_snapshot, qty, price_at_time, kitchen_status, voided_at')
         .eq('order_id', order.id)
         .is('voided_at', null)
         .order('id');
@@ -87,6 +88,7 @@ export default function POSTerminal({
         id: order.id,
         lines: (rows ?? []).map((r) => ({
           id: r.id,
+          menu_item_id: r.menu_item_id,
           name_en: r.name_snapshot,
           name_zh: r.name_zh_snapshot,
           qty: r.qty,
@@ -136,6 +138,16 @@ export default function POSTerminal({
     // Keep sort_order + id ordering within each group.
     return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [visibleItems]);
+
+  // Lookup map used by the cart to render thumbnails for existing (sent)
+  // items — the order_items row only carries name snapshots, not images.
+  const imageByItemId = useMemo(() => {
+    const m = new Map<number, string>();
+    items.forEach((i) => {
+      if (i.image_url) m.set(i.id, i.image_url);
+    });
+    return m;
+  }, [items]);
 
   // Cart mutations
   function addToCart(item: MenuItem) {
@@ -315,6 +327,7 @@ export default function POSTerminal({
             breakdown={breakdown}
             settings={settings}
             newCount={newCount}
+            imageByItemId={imageByItemId}
             onRemoveOne={removeOne}
             onAddOne={(id) => {
               const it = items.find((i) => i.id === id);
@@ -462,6 +475,7 @@ function CartPanel({
   breakdown,
   settings,
   newCount,
+  imageByItemId,
   onRemoveOne,
   onAddOne,
   sending,
@@ -474,6 +488,7 @@ function CartPanel({
   breakdown: ReturnType<typeof computeBreakdown>;
   settings: ShopSettings;
   newCount: number;
+  imageByItemId: Map<number, string>;
   onRemoveOne: (id: number) => void;
   onAddOne: (id: number) => void;
   sending: boolean;
@@ -523,22 +538,28 @@ function CartPanel({
             <p className="text-[10px] uppercase tracking-widest text-[var(--ink-400)] font-semibold mb-2">
               On this table
             </p>
-            <ul className="space-y-1.5 mb-4">
-              {existing.lines.map((l) => (
-                <li key={l.id} className="flex justify-between items-baseline text-sm">
-                  <span className="min-w-0 flex-1">
-                    <span className="font-mono text-[var(--ink-400)]">{l.qty}×</span>{' '}
-                    <span className="text-[var(--ink-700)]">{l.name_en}</span>
-                    {l.name_zh && (
-                      <span className="text-[var(--ink-400)] ml-1">· {l.name_zh}</span>
-                    )}
-                    <StatusBadge status={l.kitchen_status} />
-                  </span>
-                  <span className="font-mono text-[var(--ink-500)] ml-2">
-                    RM {(l.price * l.qty).toFixed(2)}
-                  </span>
-                </li>
-              ))}
+            <ul className="space-y-2 mb-4">
+              {existing.lines.map((l) => {
+                const img = l.menu_item_id != null ? imageByItemId.get(l.menu_item_id) : undefined;
+                return (
+                  <li key={l.id} className="flex items-center gap-2 text-sm">
+                    <CartThumb src={img} station="kitchen" />
+                    <div className="min-w-0 flex-1">
+                      <div>
+                        <span className="font-mono text-[var(--ink-400)]">{l.qty}×</span>{' '}
+                        <span className="text-[var(--ink-700)]">{l.name_en}</span>
+                      </div>
+                      {l.name_zh && (
+                        <div className="text-xs text-[var(--ink-400)]">{l.name_zh}</div>
+                      )}
+                      <StatusBadge status={l.kitchen_status} />
+                    </div>
+                    <span className="font-mono text-[var(--ink-500)] ml-2 shrink-0">
+                      RM {(l.price * l.qty).toFixed(2)}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
             <div className="h-px bg-[var(--ink-200)] mb-4" />
           </>
@@ -560,8 +581,9 @@ function CartPanel({
             {cart.map((l) => (
               <li
                 key={l.item.id}
-                className="flex items-center justify-between gap-2 bg-[var(--cream-100)] rounded-xl px-3 py-2"
+                className="flex items-center justify-between gap-2 bg-[var(--cream-100)] rounded-xl px-2 py-2"
               >
+                <CartThumb src={l.item.image_url ?? undefined} station={l.item.station} />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-[var(--ink-900)] truncate">
                     {l.item.name_en}
@@ -646,6 +668,24 @@ function Row({ label, value }: { label: string; value: number }) {
     <div className="flex justify-between text-[var(--ink-500)]">
       <span>{label}</span>
       <span className="font-mono">RM {value.toFixed(2)}</span>
+    </div>
+  );
+}
+
+function CartThumb({ src, station }: { src?: string; station: 'kitchen' | 'bar' | 'cashier' }) {
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        className="w-10 h-10 rounded-lg object-cover shrink-0 border border-[var(--ink-100)]"
+      />
+    );
+  }
+  return (
+    <div className="w-10 h-10 rounded-lg bg-white border border-[var(--ink-100)] flex items-center justify-center text-base shrink-0 opacity-60">
+      {station === 'bar' ? '🫖' : '🥟'}
     </div>
   );
 }
