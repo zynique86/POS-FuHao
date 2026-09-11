@@ -16,7 +16,6 @@ type ItemRow = {
   name_snapshot: string;
   qty: number;
   price_at_time: number;
-  cost_at_time: number;
   voided_at: string | null;
 };
 
@@ -41,7 +40,7 @@ export default function ZReportPage() {
           .lte('paid_at', dayEnd.toISOString()),
         supabase
           .from('order_items')
-          .select('order_id, name_snapshot, qty, price_at_time, cost_at_time, voided_at')
+          .select('order_id, name_snapshot, qty, price_at_time, voided_at')
           .gte('created_at', dayStart.toISOString())
           .lte('created_at', dayEnd.toISOString()),
         fetchShiftForDate(date),
@@ -64,13 +63,6 @@ export default function ZReportPage() {
     const voids = items.filter((i) => i.voided_at);
     const voidValue = voids.reduce((s, i) => s + Number(i.price_at_time) * i.qty, 0);
 
-    // Profit math from snapshotted cost.
-    const soldItems = dayItems.filter((i) => !i.voided_at);
-    const cogs = soldItems.reduce((s, i) => s + Number(i.cost_at_time || 0) * i.qty, 0);
-    const profit = Math.max(0, revenue - cogs);
-    const margin = revenue > 0 && cogs > 0 ? (profit / revenue) * 100 : null;
-    const trackingCost = cogs > 0;
-
     const methodMap = new Map<string, number>();
     for (const o of orders) {
       const m = o.payment_method || 'unknown';
@@ -86,10 +78,7 @@ export default function ZReportPage() {
     }
     const topSellers = [...sellerMap.entries()].sort((a, b) => b[1].qty - a[1].qty).slice(0, 15);
 
-    return {
-      revenue, orderCount, avg, voids: voids.length, voidValue, methodMap, topSellers,
-      cogs, profit, margin, trackingCost,
-    };
+    return { revenue, orderCount, avg, voids: voids.length, voidValue, methodMap, topSellers };
   }, [orders, items]);
 
   return (
@@ -130,38 +119,12 @@ export default function ZReportPage() {
         <p className="text-[var(--ink-500)]">Loading…</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <Tile label="Revenue" value={`RM ${stats.revenue.toFixed(2)}`} accent />
             <Tile label="Orders" value={String(stats.orderCount)} />
             <Tile label="Avg order" value={`RM ${stats.avg.toFixed(2)}`} />
             <Tile label="Voids" value={`${stats.voids} · RM ${stats.voidValue.toFixed(2)}`} />
           </div>
-
-          {/* Profit row — only appears once cost prices are set */}
-          {stats.trackingCost && (
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <Tile
-                label="Cost (COGS)"
-                value={`RM ${stats.cogs.toFixed(2)}`}
-              />
-              <Tile
-                label="Profit"
-                value={`RM ${stats.profit.toFixed(2)}`}
-                jade
-              />
-              <Tile
-                label="Margin"
-                value={stats.margin != null ? `${stats.margin.toFixed(1)}%` : '—'}
-                jade
-              />
-            </div>
-          )}
-          {!stats.trackingCost && stats.revenue > 0 && (
-            <div className="mb-6 p-3 rounded-2xl text-xs text-[var(--ink-500)] text-center"
-                 style={{ background: 'var(--cream-100)' }}>
-              💡 Set the <strong>Cost / Modal</strong> price on each menu item to see profit and margin here.
-            </div>
-          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <section className="bg-white rounded-3xl p-6 border border-[var(--ink-200)]" style={{ boxShadow: 'var(--shadow-sm)' }}>
@@ -348,34 +311,20 @@ function todayISO() {
   return `${y}-${m}-${dd}`;
 }
 
-function Tile({
-  label,
-  value,
-  accent,
-  jade,
-}: {
-  label: string;
-  value: string;
-  accent?: boolean;
-  jade?: boolean;
-}) {
-  const bg = accent
-    ? 'linear-gradient(135deg, var(--brand-600), var(--brand-800))'
-    : jade
-    ? 'linear-gradient(135deg, var(--jade-500), var(--jade-600))'
-    : undefined;
-  const shadow = accent
-    ? 'var(--shadow-brand)'
-    : jade
-    ? '0 10px 24px -8px rgb(5 150 105 / 0.30)'
-    : 'var(--shadow-sm)';
-  const white = accent || jade;
+function Tile({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div
-      className={`rounded-3xl p-5 ${white ? 'text-white' : 'bg-white text-[var(--ink-900)] border border-[var(--ink-200)]'}`}
-      style={bg ? { background: bg, boxShadow: shadow } : { boxShadow: shadow }}
+      className={`rounded-3xl p-5 ${accent ? 'text-white' : 'bg-white text-[var(--ink-900)] border border-[var(--ink-200)]'}`}
+      style={
+        accent
+          ? {
+              background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
+              boxShadow: 'var(--shadow-brand)',
+            }
+          : { boxShadow: 'var(--shadow-sm)' }
+      }
     >
-      <p className={`text-[10px] uppercase tracking-[0.2em] ${white ? 'text-white/70' : 'text-[var(--ink-500)]'} font-semibold`}>
+      <p className={`text-[10px] uppercase tracking-[0.2em] ${accent ? 'text-white/70' : 'text-[var(--ink-500)]'} font-semibold`}>
         {label}
       </p>
       <p className="text-2xl font-bold font-mono mt-2 leading-none">{value}</p>

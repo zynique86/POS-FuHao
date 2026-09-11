@@ -6,7 +6,6 @@ export type MenuItem = {
   name_en: string;
   name_zh: string | null;
   price: number;
-  cost_price: number;      // "modal" (本錢) — cost to produce
   category: string;
   is_available: boolean;
   sort_order: number;
@@ -36,7 +35,6 @@ export type OrderItem = {
   name_zh_snapshot: string | null;
   qty: number;
   price_at_time: number;
-  cost_at_time: number;   // snapshot of cost when order was placed
   kitchen_status: string;
   voided_at: string | null;
   void_reason: string | null;
@@ -71,26 +69,6 @@ export type ShopSettings = {
 };
 
 export type PayMethod = 'cash' | 'duitnow_qr' | 'card';
-
-// Ingredient = a raw material the shop buys. Its cost_price is the
-// "modal" (本錢) — what it costs to purchase per unit.
-export type Ingredient = {
-  id: number;
-  name: string;
-  name_zh: string | null;
-  supplier: string | null;
-  cost_price: number;
-  unit: string;
-  stock_qty: number | null;
-  low_stock_at: number | null;
-  note: string | null;
-  active: boolean;
-  updated_at: string;
-  created_at: string;
-};
-
-export const INGREDIENT_UNITS = ['kg', 'g', 'piece', 'box', 'packet', 'ml', 'l'] as const;
-export type IngredientUnit = typeof INGREDIENT_UNITS[number];
 
 export type Payment = {
   id: number;

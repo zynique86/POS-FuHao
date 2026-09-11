@@ -34,7 +34,7 @@ export default function POSTerminal({
   const [tableNo, setTableNo] = useState<number>(1);
   const [existing, setExisting] = useState<ExistingOrder | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [category, setCategory] = useState<string>('All');
+  const [stationFilter, setStationFilter] = useState<'all' | 'kitchen' | 'bar'>('all');
   const [sending, setSending] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
 
@@ -108,27 +108,34 @@ export default function POSTerminal({
     };
   }, [tableNo]);
 
-  // Categories with counts
-  const categories = useMemo(() => {
-    const map = new Map<string, number>();
-    items.forEach((i) => {
-      if (i.is_available === false) return;
-      map.set(i.category || 'Other', (map.get(i.category || 'Other') ?? 0) + 1);
-    });
-    const total = [...map.values()].reduce((s, n) => s + n, 0);
-    return [
-      { key: 'All', count: total },
-      ...[...map.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, count]) => ({ key, count })),
-    ];
-  }, [items]);
-
+  // Items visible after station filter — grouped by category for display.
   const visibleItems = useMemo(
     () =>
       items
         .filter((i) => i.is_available !== false)
-        .filter((i) => category === 'All' || (i.category || 'Other') === category),
-    [items, category]
+        .filter((i) => stationFilter === 'all' || i.station === stationFilter),
+    [items, stationFilter]
   );
+
+  const stationCounts = useMemo(() => {
+    const available = items.filter((i) => i.is_available !== false);
+    return {
+      all: available.length,
+      kitchen: available.filter((i) => i.station === 'kitchen').length,
+      bar: available.filter((i) => i.station === 'bar').length,
+    };
+  }, [items]);
+
+  const grouped = useMemo(() => {
+    const m = new Map<string, MenuItem[]>();
+    for (const i of visibleItems) {
+      const c = i.category || 'Other';
+      if (!m.has(c)) m.set(c, []);
+      m.get(c)!.push(i);
+    }
+    // Keep sort_order + id ordering within each group.
+    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [visibleItems]);
 
   // Cart mutations
   function addToCart(item: MenuItem) {
@@ -190,7 +197,6 @@ export default function POSTerminal({
         name_snapshot: l.item.name_en,
         name_zh_snapshot: l.item.name_zh,
         price_at_time: l.item.price,
-        cost_at_time: l.item.cost_price ?? 0,
         qty: l.qty,
       }));
 
@@ -253,44 +259,47 @@ export default function POSTerminal({
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6 mt-6">
         <section>
-          {/* Category rail */}
-          <div className="sticky top-14 z-10 -mx-4 md:-mx-6 px-4 md:px-6 py-3 bg-[var(--cream-50)]/85 backdrop-blur border-b border-[var(--ink-200)] mb-4">
+          {/* Station filter — mirrors the /restock page layout */}
+          <div className="sticky top-14 z-10 -mx-4 md:-mx-6 px-4 md:px-6 py-3 bg-[var(--cream-50)]/85 backdrop-blur border-b border-[var(--ink-200)] mb-6">
             <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
-              {categories.map((c) => {
-                const active = category === c.key;
-                return (
-                  <button
-                    key={c.key}
-                    onClick={() => setCategory(c.key)}
-                    className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition ${
-                      active
-                        ? 'bg-[var(--brand-600)] text-white shadow-md'
-                        : 'bg-white text-[var(--ink-700)] border border-[var(--ink-200)] hover:border-[var(--brand-400)]'
-                    }`}
-                    style={active ? { boxShadow: 'var(--shadow-brand)' } : undefined}
-                  >
-                    {c.key}
-                    <span className={`ml-2 text-xs ${active ? 'text-white/80' : 'text-[var(--ink-400)]'}`}>
-                      {c.count}
-                    </span>
-                  </button>
-                );
-              })}
+              <StationPill active={stationFilter === 'all'} onClick={() => setStationFilter('all')} count={stationCounts.all}>
+                All
+              </StationPill>
+              <StationPill active={stationFilter === 'kitchen'} onClick={() => setStationFilter('kitchen')} count={stationCounts.kitchen}>
+                👨‍🍳 Kitchen
+              </StationPill>
+              <StationPill active={stationFilter === 'bar'} onClick={() => setStationFilter('bar')} count={stationCounts.bar}>
+                🫖 Bar
+              </StationPill>
             </div>
           </div>
 
-          {/* Menu grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
-            {visibleItems.map((item) => (
-              <MenuButton
-                key={item.id}
-                item={item}
-                onAdd={() => addToCart(item)}
-              />
+          {/* Categories as sections, items in a grid per section */}
+          <div className="space-y-6">
+            {grouped.map(([category, list]) => (
+              <section key={category}>
+                <h2 className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold mb-3">
+                  {category}
+                  <span className="ml-2 text-[var(--ink-400)] font-normal font-mono">
+                    {list.length}
+                  </span>
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {list.map((item) => (
+                    <MenuButton
+                      key={item.id}
+                      item={item}
+                      onAdd={() => addToCart(item)}
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
-            {visibleItems.length === 0 && (
-              <div className="col-span-full py-16 text-center">
-                <p className="text-[var(--ink-500)]">No items in {category}.</p>
+
+            {grouped.length === 0 && (
+              <div className="py-16 text-center">
+                <div className="text-6xl mb-3 opacity-40">🥟</div>
+                <p className="text-[var(--ink-500)]">No items available.</p>
                 <p className="text-xs text-[var(--ink-400)] mt-1">Add items in Admin → Menu.</p>
               </div>
             )}
@@ -368,6 +377,35 @@ function PageHeader({
 }
 
 // ─── menu button ──────────────────────────────────────────────────────────
+
+function StationPill({
+  active,
+  onClick,
+  count,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  count: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition ${
+        active
+          ? 'bg-[var(--brand-600)] text-white shadow-md'
+          : 'bg-white text-[var(--ink-700)] border border-[var(--ink-200)] hover:border-[var(--brand-400)]'
+      }`}
+      style={active ? { boxShadow: 'var(--shadow-brand)' } : undefined}
+    >
+      {children}
+      <span className={`ml-2 text-xs ${active ? 'text-white/80' : 'text-[var(--ink-400)]'}`}>
+        {count}
+      </span>
+    </button>
+  );
+}
 
 function MenuButton({ item, onAdd }: { item: MenuItem; onAdd: () => void }) {
   return (

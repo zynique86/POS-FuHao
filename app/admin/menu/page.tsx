@@ -11,7 +11,6 @@ type Draft = {
   name_en: string;
   name_zh: string;
   price: string;
-  cost_price: string;
   category: string;
   sort_order: string;
   is_available: boolean;
@@ -21,7 +20,6 @@ const EMPTY: Draft = {
   name_en: '',
   name_zh: '',
   price: '',
-  cost_price: '',
   category: 'Steamed',
   sort_order: '0',
   is_available: true,
@@ -68,7 +66,6 @@ export default function AdminMenuPage() {
       name_en: item.name_en,
       name_zh: item.name_zh ?? '',
       price: String(item.price),
-      cost_price: String(item.cost_price ?? 0),
       category: item.category || 'Other',
       sort_order: String(item.sort_order ?? 0),
       is_available: item.is_available !== false,
@@ -84,14 +81,10 @@ export default function AdminMenuPage() {
     if (!Number.isFinite(priceNum) || priceNum < 0) return setErr('Price must be a non-negative number');
     setSaving(true);
     setErr(null);
-    const costNum = Number(draft.cost_price) || 0;
-    if (costNum < 0) return setErr('Cost price cannot be negative');
-
     const payload = {
       name_en: draft.name_en.trim(),
       name_zh: draft.name_zh.trim() || null,
       price: priceNum,
-      cost_price: costNum,
       category: draft.category.trim() || 'Other',
       sort_order: Number(draft.sort_order) || 0,
       is_available: draft.is_available,
@@ -198,11 +191,8 @@ export default function AdminMenuPage() {
                     >
                       {item.station === 'bar' ? '🫖 Bar' : '👨‍🍳 Kitchen'}
                     </div>
-                    <div className="font-mono text-right w-36">
-                      <div className="text-[var(--brand-700)] font-semibold">
-                        RM {Number(item.price).toFixed(2)}
-                      </div>
-                      <MarginBadge price={Number(item.price)} cost={Number(item.cost_price)} />
+                    <div className="font-mono text-[var(--brand-700)] font-semibold w-24 text-right">
+                      RM {Number(item.price).toFixed(2)}
                     </div>
                     <button
                       onClick={() => toggleAvailability(item)}
@@ -266,7 +256,7 @@ export default function AdminMenuPage() {
             </Field>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Selling price (RM)">
+              <Field label="Price (RM)">
                 <input
                   type="number"
                   step="0.10"
@@ -275,41 +265,15 @@ export default function AdminMenuPage() {
                   className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl font-mono focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
                 />
               </Field>
-              <Field label="Cost / Modal 本錢 (RM)">
+              <Field label="Sort order">
                 <input
                   type="number"
-                  step="0.10"
-                  value={draft.cost_price}
-                  onChange={(e) => setDraft({ ...draft, cost_price: e.target.value })}
-                  placeholder="0.00"
+                  value={draft.sort_order}
+                  onChange={(e) => setDraft({ ...draft, sort_order: e.target.value })}
                   className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl font-mono focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
                 />
               </Field>
             </div>
-
-            {draft.price && draft.cost_price && Number(draft.cost_price) > 0 && (
-              <div
-                className="mb-3 rounded-xl p-3 text-center text-sm"
-                style={{ background: 'linear-gradient(135deg, var(--cream-100), var(--cream-200))' }}
-              >
-                <span className="text-[var(--ink-600)]">Profit per unit: </span>
-                <span className="font-mono font-bold text-[var(--jade-600)]">
-                  RM {Math.max(0, Number(draft.price) - Number(draft.cost_price)).toFixed(2)}
-                </span>
-                <span className="text-[var(--ink-500)] ml-2">
-                  ({calcMargin(Number(draft.price), Number(draft.cost_price)).toFixed(0)}% margin)
-                </span>
-              </div>
-            )}
-
-            <Field label="Sort order">
-              <input
-                type="number"
-                value={draft.sort_order}
-                onChange={(e) => setDraft({ ...draft, sort_order: e.target.value })}
-                className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl font-mono focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
-              />
-            </Field>
 
             <Field label="Category">
               <input
@@ -432,30 +396,3 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function MarginBadge({ price, cost }: { price: number; cost: number }) {
-  if (!cost || cost <= 0) {
-    return (
-      <div className="text-[10px] text-[var(--ink-400)] mt-0.5">
-        modal not set
-      </div>
-    );
-  }
-  const margin = calcMargin(price, cost);
-  const color =
-    margin >= 60 ? 'var(--jade-600)'
-    : margin >= 30 ? 'var(--gold-600)'
-    : 'var(--brand-700)';
-  return (
-    <div className="text-[10px] mt-0.5 flex justify-end gap-1.5">
-      <span className="text-[var(--ink-400)]">cost RM {cost.toFixed(2)}</span>
-      <span style={{ color }} className="font-bold">
-        · {margin.toFixed(0)}%
-      </span>
-    </div>
-  );
-}
-
-function calcMargin(price: number, cost: number): number {
-  if (!price || price <= 0) return 0;
-  return ((price - cost) / price) * 100;
-}

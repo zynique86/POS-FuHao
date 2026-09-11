@@ -22,7 +22,6 @@ type ItemRow = {
   name_snapshot: string;
   qty: number;
   price_at_time: number;
-  cost_at_time: number;
   voided_at: string | null;
 };
 type PaymentRow = {
@@ -50,7 +49,7 @@ export default function Dashboard() {
     const [todayRes, yestRes, itemsRes, paysRes, openRes] = await Promise.all([
       supabase.from('orders').select('*').gte('paid_at', todayStart.toISOString()),
       supabase.from('orders').select('*').gte('paid_at', yestStart.toISOString()).lt('paid_at', todayStart.toISOString()),
-      supabase.from('order_items').select('order_id, name_snapshot, qty, price_at_time, cost_at_time, voided_at').gte('created_at', todayStart.toISOString()),
+      supabase.from('order_items').select('order_id, name_snapshot, qty, price_at_time, voided_at').gte('created_at', todayStart.toISOString()),
       supabase.from('payments').select('method, amount, created_at').gte('created_at', todayStart.toISOString()),
       supabase.from('orders').select('*').is('paid_at', null),
     ]);
@@ -127,13 +126,6 @@ export default function Dashboard() {
             </p>
             <div className="flex flex-wrap items-baseline gap-6 mt-5">
               <ComparisonDelta today={stats.revenue} yesterday={stats.yestRevenue} label="vs. yesterday" />
-              {stats.trackingCost && (
-                <MiniStat
-                  label="Profit today"
-                  value={`RM ${stats.profit.toFixed(2)}`}
-                  hint={stats.margin != null ? `${stats.margin.toFixed(0)}% margin` : undefined}
-                />
-              )}
               <MiniStat label="Orders" value={String(stats.orderCount)} />
               <MiniStat label="Avg order" value={`RM ${stats.avgOrder.toFixed(2)}`} />
             </div>
@@ -173,18 +165,8 @@ export default function Dashboard() {
         <MiniTile emoji="🧾" label="Orders paid" value={String(stats.orderCount)} accent="brand" />
         <MiniTile emoji="🥟" label="Items sold" value={String(stats.itemsSold)} accent="gold" />
         <MiniTile emoji="⏳" label="Unpaid now" value={String(stats.openCount)} accent="brand" pulse={stats.openCount > 0} />
-        <MiniTile
-          emoji="💰"
-          label="Profit"
-          value={stats.trackingCost ? `RM ${stats.profit.toFixed(2)}` : '—'}
-          accent="jade"
-        />
-        <MiniTile
-          emoji="📈"
-          label="Margin"
-          value={stats.margin != null ? `${stats.margin.toFixed(0)}%` : '—'}
-          accent="jade"
-        />
+        <MiniTile emoji="🕒" label="Peak hour" value={stats.peakHour !== null ? `${stats.peakHour}:00` : '—'} />
+        <MiniTile emoji="🍽" label="Avg / order" value={`${stats.avgItems.toFixed(1)} items`} />
         <MiniTile
           emoji="🚫"
           label="Voids"
@@ -415,13 +397,6 @@ function computeStats({
   const voidValue = voids.reduce((s, i) => s + Number(i.price_at_time) * i.qty, 0);
   const avgItems = orderCount > 0 ? itemsSold / orderCount : 0;
 
-  // Profit math using the snapshotted cost_at_time so historical margins
-  // don't shift when the menu's cost is later edited.
-  const cogs = soldItems.reduce((s, i) => s + Number(i.cost_at_time || 0) * i.qty, 0);
-  const profit = Math.max(0, revenue - cogs);
-  const margin = revenue > 0 && cogs > 0 ? (profit / revenue) * 100 : null;
-  const trackingCost = cogs > 0;
-
   const hourly = Array(24).fill(0);
   for (const o of todayOrders) {
     if (o.paid_at) {
@@ -472,10 +447,6 @@ function computeStats({
     voidCount,
     voidValue,
     avgItems,
-    cogs,
-    profit,
-    margin,
-    trackingCost,
     hourly,
     hourlyMax,
     peakHour,
@@ -513,12 +484,11 @@ function EmptyBlock({ label, emoji }: { label: string; emoji: string }) {
   );
 }
 
-function MiniStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">{label}</p>
       <p className="text-lg font-bold font-mono mt-0.5">{value}</p>
-      {hint && <p className="text-[10px] text-white/60 font-mono mt-0.5">{hint}</p>}
     </div>
   );
 }
