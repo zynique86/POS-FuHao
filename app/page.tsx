@@ -3,6 +3,11 @@ import { fetchSettings } from '@/lib/settings';
 import POSTerminal from './pos-terminal';
 import type { MenuItem } from '@/lib/types';
 
+// Force fresh SSR on every request so newly-added items and freshly-uploaded
+// photos show up without waiting for a Vercel rebuild or a cache purge.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function Home() {
   const [{ data: items, error }, settings] = await Promise.all([
     supabase
