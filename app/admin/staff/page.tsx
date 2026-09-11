@@ -5,6 +5,13 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import {
+  AdminPageHeader,
+  PrimaryBtn,
+  SecondaryBtn,
+  ErrorBanner,
+  EmptyState,
+} from '@/components/ui';
 import { listStaff, type Staff, type StaffRole } from '@/lib/staff';
 
 type Draft = {
@@ -63,40 +70,32 @@ export default function AdminStaffPage() {
 
   return (
     <main className="min-h-[calc(100vh-56px)] max-w-[1200px] mx-auto px-4 md:px-6 py-6">
-      <header className="flex flex-wrap justify-between items-end gap-4 mb-6">
-        <div>
-          <a href="/admin" className="text-xs uppercase tracking-widest text-[var(--ink-500)] hover:text-[var(--brand-600)]">
-            ← Dashboard
-          </a>
-          <h1 className="text-3xl md:text-4xl font-bold text-[var(--ink-900)] mt-2">
-            Staff · 員工
-          </h1>
-          <p className="text-sm text-[var(--ink-500)] mt-1">
-            Add cashiers and managers. Managers/admins can access this dashboard.
-          </p>
-        </div>
-        <button
-          onClick={() => { setDraft({ ...EMPTY }); setErr(null); }}
-          className="text-white font-bold px-5 py-3 rounded-2xl"
-          style={{
-            background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
-            boxShadow: 'var(--shadow-brand)',
-          }}
-        >
-          + Add staff
-        </button>
-      </header>
+      <AdminPageHeader
+        title="Staff"
+        titleZh="員工"
+        sub="Add cashiers and managers. Managers/admins can access this dashboard."
+        right={
+          <button
+            onClick={() => { setDraft({ ...EMPTY }); setErr(null); }}
+            className="text-white font-bold px-5 py-3 rounded-2xl"
+            style={{
+              background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
+              boxShadow: 'var(--shadow-brand)',
+            }}
+          >
+            + Add staff
+          </button>
+        }
+      />
 
       {loading ? (
         <p className="text-[var(--ink-500)]">Loading…</p>
       ) : staff.length === 0 ? (
-        <div className="text-center py-16">
-          <div className="text-6xl mb-3 opacity-40">👤</div>
-          <p className="text-lg text-[var(--ink-700)] font-semibold">No staff yet</p>
-          <p className="text-sm text-[var(--ink-500)] mt-1">
-            Add your first manager. Their PIN then gates the dashboard.
-          </p>
-        </div>
+        <EmptyState
+          emoji="👤"
+          title="No staff yet"
+          sub="Add your first manager. Their PIN then gates the dashboard."
+        />
       ) : (
         <section className="bg-white rounded-3xl border border-[var(--ink-200)] overflow-hidden"
                  style={{ boxShadow: 'var(--shadow-sm)' }}>
@@ -203,31 +202,11 @@ export default function AdminStaffPage() {
               Active
             </label>
 
-            {err && (
-              <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] text-[var(--brand-700)] p-2 rounded-xl mb-4 text-sm">
-                {err}
-              </div>
-            )}
+            {err && <ErrorBanner>{err}</ErrorBanner>}
 
             <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setDraft(null)}
-                disabled={busy}
-                className="bg-[var(--cream-100)] hover:bg-[var(--cream-200)] text-[var(--ink-800)] font-bold py-3 rounded-2xl"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={save}
-                disabled={busy}
-                className="text-white font-bold py-3 rounded-2xl disabled:opacity-60"
-                style={{
-                  background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
-                  boxShadow: 'var(--shadow-brand)',
-                }}
-              >
-                {busy ? 'Saving…' : 'Save'}
-              </button>
+              <SecondaryBtn onClick={() => setDraft(null)} disabled={busy}>Cancel</SecondaryBtn>
+              <PrimaryBtn onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</PrimaryBtn>
             </div>
           </div>
         </div>

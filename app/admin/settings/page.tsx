@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { fetchSettings } from '@/lib/settings';
 import { computeBreakdown } from '@/lib/pricing';
+import { AdminPageHeader } from '@/components/ui';
 import type { ShopSettings } from '@/lib/types';
 
 type Draft = {
@@ -71,14 +72,7 @@ export default function AdminSettingsPage() {
 
   return (
     <main className="min-h-[calc(100vh-56px)] max-w-[1200px] mx-auto px-4 md:px-6 py-6">
-      <header className="mb-6">
-        <a href="/admin" className="text-xs uppercase tracking-widest text-[var(--ink-500)] hover:text-[var(--brand-600)]">
-          ← Dashboard
-        </a>
-        <h1 className="text-3xl md:text-4xl font-bold text-[var(--ink-900)] mt-2">
-          Settings · 設定
-        </h1>
-      </header>
+      <AdminPageHeader title="Settings" titleZh="設定" />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <section className="bg-white rounded-3xl p-6 border border-[var(--ink-200)]" style={{ boxShadow: 'var(--shadow-sm)' }}>

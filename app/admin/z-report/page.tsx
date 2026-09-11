@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { AdminPageHeader } from '@/components/ui';
 import { fetchShiftForDate, type Shift } from '@/lib/shifts';
 
 type OrderRow = {
@@ -83,37 +84,33 @@ export default function ZReportPage() {
 
   return (
     <main className="min-h-[calc(100vh-56px)] max-w-[1200px] mx-auto px-4 md:px-6 py-6">
-      <header className="mb-6 flex flex-wrap justify-between items-end gap-4 no-print">
-        <div>
-          <a href="/admin" className="text-xs uppercase tracking-widest text-[var(--ink-500)] hover:text-[var(--brand-600)]">
-            ← Dashboard
-          </a>
-          <h1 className="text-3xl md:text-4xl font-bold text-[var(--ink-900)] mt-2">
-            Z-Report · 日結
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold">
-            Date
-          </label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="px-3 py-2 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
-          />
-          <button
-            onClick={() => window.print()}
-            className="text-white font-bold px-4 py-2 rounded-xl text-sm"
-            style={{
-              background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
-              boxShadow: 'var(--shadow-brand)',
-            }}
-          >
-            🖨 Print
-          </button>
-        </div>
-      </header>
+      <AdminPageHeader
+        title="Z-Report"
+        titleZh="日結"
+        right={
+          <div className="flex items-center gap-2 no-print">
+            <label className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold">
+              Date
+            </label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="px-3 py-2 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+            />
+            <button
+              onClick={() => window.print()}
+              className="text-white font-bold px-4 py-2 rounded-xl text-sm"
+              style={{
+                background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
+                boxShadow: 'var(--shadow-brand)',
+              }}
+            >
+              🖨 Print
+            </button>
+          </div>
+        }
+      />
 
       {loading ? (
         <p className="text-[var(--ink-500)]">Loading…</p>

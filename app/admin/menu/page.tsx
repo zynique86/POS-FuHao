@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { AdminPageHeader, PrimaryBtn, SecondaryBtn, ErrorBanner, EmptyState } from '@/components/ui';
 import type { MenuItem, PrintStation } from '@/lib/types';
 
 type Draft = {
@@ -151,41 +152,29 @@ export default function AdminMenuPage() {
 
   return (
     <main className="min-h-[calc(100vh-56px)] max-w-[1200px] mx-auto px-4 md:px-6 py-6">
-      <header className="flex flex-wrap justify-between items-end gap-4 mb-6">
-        <div>
-          <a href="/admin" className="text-xs uppercase tracking-widest text-[var(--ink-500)] hover:text-[var(--brand-600)]">
-            ← Dashboard
-          </a>
-          <h1 className="text-3xl md:text-4xl font-bold text-[var(--ink-900)] mt-2">
-            Menu · 菜單
-          </h1>
-        </div>
-        <button
-          onClick={startAdd}
-          className="text-white font-bold px-5 py-3 rounded-2xl transition"
-          style={{
-            background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
-            boxShadow: 'var(--shadow-brand)',
-          }}
-        >
-          + Add item
-        </button>
-      </header>
+      <AdminPageHeader
+        title="Menu"
+        titleZh="菜單"
+        right={
+          <button
+            onClick={startAdd}
+            className="text-white font-bold px-5 py-3 rounded-2xl transition"
+            style={{
+              background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
+              boxShadow: 'var(--shadow-brand)',
+            }}
+          >
+            + Add item
+          </button>
+        }
+      />
 
-      {err && !draft && (
-        <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] text-[var(--brand-700)] p-3 rounded-xl mb-4 text-sm">
-          {err}
-        </div>
-      )}
+      {err && !draft && <ErrorBanner>{err}</ErrorBanner>}
 
       {loading ? (
         <p className="text-[var(--ink-500)]">Loading menu…</p>
       ) : grouped.length === 0 ? (
-        <div className="text-center py-20">
-          <div className="text-6xl mb-3 opacity-40">🥟</div>
-          <p className="text-lg text-[var(--ink-700)] font-semibold">No menu items yet</p>
-          <p className="text-sm text-[var(--ink-500)] mt-1">Tap "Add item" to create the first one.</p>
-        </div>
+        <EmptyState emoji="🥟" title="No menu items yet" sub='Tap "Add item" to create the first one.' />
       ) : (
         <div className="space-y-6">
           {grouped.map(([category, list]) => (
@@ -463,31 +452,13 @@ export default function AdminMenuPage() {
               Available on POS
             </label>
 
-            {err && (
-              <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] text-[var(--brand-700)] p-2 rounded-xl mb-4 text-sm">
-                {err}
-              </div>
-            )}
+            {err && <ErrorBanner>{err}</ErrorBanner>}
 
             <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setDraft(null)}
-                disabled={saving}
-                className="w-full bg-[var(--cream-100)] hover:bg-[var(--cream-200)] text-[var(--ink-800)] font-bold py-3 rounded-2xl"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={save}
-                disabled={saving}
-                className="w-full text-white font-bold py-3 rounded-2xl disabled:opacity-60"
-                style={{
-                  background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
-                  boxShadow: 'var(--shadow-brand)',
-                }}
-              >
+              <SecondaryBtn onClick={() => setDraft(null)} disabled={saving}>Cancel</SecondaryBtn>
+              <PrimaryBtn onClick={save} disabled={saving}>
                 {saving ? 'Saving…' : 'Save'}
-              </button>
+              </PrimaryBtn>
             </div>
           </div>
         </div>
