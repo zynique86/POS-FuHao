@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { AdminPageHeader, PrimaryBtn, SecondaryBtn, ErrorBanner, EmptyState } from '@/components/ui';
-import type { MenuItem, PrintStation } from '@/lib/types';
+import { SUGGESTED_MODIFIERS, type ItemModifier, type MenuItem, type PrintStation } from '@/lib/types';
 
 type Draft = {
   id?: number;
@@ -13,6 +13,7 @@ type Draft = {
   name_zh: string;
   price: string;
   image_url: string;
+  options_available: ItemModifier[];
   category: string;
   sort_order: string;
   is_available: boolean;
@@ -23,6 +24,7 @@ const EMPTY: Draft = {
   name_zh: '',
   price: '',
   image_url: '',
+  options_available: [],
   category: 'Steamed',
   sort_order: '0',
   is_available: true,
@@ -105,6 +107,7 @@ export default function AdminMenuPage() {
       name_zh: item.name_zh ?? '',
       price: String(item.price),
       image_url: item.image_url ?? '',
+      options_available: Array.isArray(item.options_available) ? item.options_available : [],
       category: item.category || 'Other',
       sort_order: String(item.sort_order ?? 0),
       is_available: item.is_available !== false,
@@ -125,6 +128,7 @@ export default function AdminMenuPage() {
       name_zh: draft.name_zh.trim() || null,
       price: priceNum,
       image_url: draft.image_url.trim() || null,
+      options_available: draft.options_available,
       category: draft.category.trim() || 'Other',
       sort_order: Number(draft.sort_order) || 0,
       is_available: draft.is_available,
@@ -442,6 +446,81 @@ export default function AdminMenuPage() {
               </span>
             </Field>
 
+            {/* Per-item modifiers */}
+            <div className="mb-4">
+              <span className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-2 font-semibold">
+                Modifiers for this item
+              </span>
+
+              {/* Current list */}
+              {draft.options_available.length > 0 ? (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {draft.options_available.map((mod, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold text-white"
+                      style={{
+                        background: 'linear-gradient(135deg, var(--gold-500), var(--brand-600))',
+                      }}
+                    >
+                      {mod.label}
+                      {mod.label_zh && <span> · {mod.label_zh}</span>}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            options_available: draft.options_available.filter((_, i) => i !== idx),
+                          })
+                        }
+                        className="w-4 h-4 rounded-full bg-white/20 hover:bg-white/40 text-white text-[10px] flex items-center justify-center"
+                        aria-label="Remove modifier"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-[var(--ink-400)] mb-3">
+                  No modifiers yet. Add custom ones or tap a suggestion below.
+                </p>
+              )}
+
+              {/* Custom entry */}
+              <ModifierAdder
+                onAdd={(m) => {
+                  if (draft.options_available.some((x) => x.label === m.label)) return;
+                  setDraft({ ...draft, options_available: [...draft.options_available, m] });
+                }}
+              />
+
+              {/* Suggestions row */}
+              <p className="text-[10px] uppercase tracking-widest text-[var(--ink-400)] font-semibold mt-3 mb-2">
+                Suggestions — tap to add
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {SUGGESTED_MODIFIERS.filter(
+                  (s) => !draft.options_available.some((x) => x.label === s.label)
+                ).map((s, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() =>
+                      setDraft({
+                        ...draft,
+                        options_available: [...draft.options_available, s],
+                      })
+                    }
+                    className="text-[10px] px-2.5 py-1 rounded-full bg-[var(--cream-100)] text-[var(--ink-700)] border border-[var(--ink-200)] hover:border-[var(--brand-400)]"
+                  >
+                    + {s.label}
+                    {s.label_zh && <span className="text-[var(--ink-400)]"> · {s.label_zh}</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <label className="flex items-center gap-2 mb-5 text-sm text-[var(--ink-800)] cursor-pointer">
               <input
                 type="checkbox"
@@ -475,6 +554,48 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       </span>
       {children}
     </label>
+  );
+}
+
+// Small inline editor to add a custom modifier chip (English + optional Chinese).
+function ModifierAdder({ onAdd }: { onAdd: (m: ItemModifier) => void }) {
+  const [en, setEn] = useState('');
+  const [zh, setZh] = useState('');
+
+  function submit() {
+    const label = en.trim();
+    if (!label) return;
+    onAdd({ label, label_zh: zh.trim() });
+    setEn('');
+    setZh('');
+  }
+
+  return (
+    <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+      <input
+        value={en}
+        onChange={(e) => setEn(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), submit())}
+        placeholder="English"
+        className="px-3 py-2 border border-[var(--ink-200)] rounded-lg text-sm focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+      />
+      <input
+        value={zh}
+        onChange={(e) => setZh(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), submit())}
+        placeholder="中文 (optional)"
+        className="px-3 py-2 border border-[var(--ink-200)] rounded-lg text-sm focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+      />
+      <button
+        type="button"
+        onClick={submit}
+        disabled={!en.trim()}
+        className="px-4 py-2 rounded-lg text-white font-bold text-sm disabled:opacity-40"
+        style={{ background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))' }}
+      >
+        Add
+      </button>
+    </div>
   );
 }
 

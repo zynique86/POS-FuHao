@@ -1,12 +1,21 @@
 // Shared DB row types — mirror the Supabase schema.
 // Kept in one place so pages, services and the printer stay in sync.
 
+// A per-item modifier chip the waiter can toggle when adding the item to a
+// cart. Each menu item carries its own list, so "No pork" is on the har gow
+// but not on tea, and "Less sugar" is on tea but not on har gow.
+export type ItemModifier = {
+  label: string;     // English
+  label_zh: string;  // Chinese (may be empty)
+};
+
 export type MenuItem = {
   id: number;
   name_en: string;
   name_zh: string | null;
   price: number;
   image_url: string | null;
+  options_available: ItemModifier[];
   category: string;
   is_available: boolean;
   sort_order: number;
@@ -44,23 +53,26 @@ export type OrderItem = {
   voided_by: string | null;
 };
 
-// Common dim-sum modifier options a waiter can toggle when adding an item.
-// Bilingual — kitchen tickets keep the pair so cooks can read either.
-export const ITEM_OPTIONS: { key: string; label: string; label_zh: string }[] = [
-  { key: 'no_pork',      label: 'No pork',       label_zh: '不豬肉' },
-  { key: 'no_shrimp',    label: 'No shrimp',     label_zh: '不蝦' },
-  { key: 'no_peanut',    label: 'No peanut',     label_zh: '不花生' },
-  { key: 'no_coriander', label: 'No coriander',  label_zh: '不香菜' },
-  { key: 'no_spring_onion', label: 'No spring onion', label_zh: '不蔥' },
-  { key: 'less_oil',     label: 'Less oil',      label_zh: '少油' },
-  { key: 'less_salt',    label: 'Less salt',     label_zh: '少鹽' },
-  { key: 'extra_sauce',  label: 'Extra sauce',   label_zh: '多醬' },
-  { key: 'extra_chilli', label: 'Extra chilli',  label_zh: '多辣' },
-  { key: 'no_chilli',    label: 'No chilli',     label_zh: '不辣' },
-  { key: 'well_done',    label: 'Well done',     label_zh: '熟透' },
-  { key: 'hot_water',    label: 'Hot water',     label_zh: '熱水' },
-  { key: 'no_ice',       label: 'No ice',        label_zh: '不加冰' },
-  { key: 'less_sugar',   label: 'Less sugar',    label_zh: '少糖' },
+// Suggested starter modifiers shown as one-tap "add" chips in the admin
+// menu editor. They are just suggestions — the waiter only ever sees
+// the modifiers that were actually saved on each menu item.
+export const SUGGESTED_MODIFIERS: ItemModifier[] = [
+  { label: 'No pork',          label_zh: '不豬肉' },
+  { label: 'No shrimp',        label_zh: '不蝦' },
+  { label: 'No peanut',        label_zh: '不花生' },
+  { label: 'No coriander',     label_zh: '不香菜' },
+  { label: 'No spring onion',  label_zh: '不蔥' },
+  { label: 'Less oil',         label_zh: '少油' },
+  { label: 'Less salt',        label_zh: '少鹽' },
+  { label: 'Extra sauce',      label_zh: '多醬' },
+  { label: 'Extra chilli',     label_zh: '多辣' },
+  { label: 'No chilli',        label_zh: '不辣' },
+  { label: 'Well done',        label_zh: '熟透' },
+  { label: 'Hot water',        label_zh: '熱水' },
+  { label: 'No ice',           label_zh: '不加冰' },
+  { label: 'Less sugar',       label_zh: '少糖' },
+  { label: 'Extra sugar',      label_zh: '多糖' },
+  { label: 'Half portion',     label_zh: '半份' },
 ];
 
 export type OrderStatus = 'open' | 'closed' | 'paid' | 'void' | 'refunded';

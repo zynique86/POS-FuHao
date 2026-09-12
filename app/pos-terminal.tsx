@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { computeBreakdown, sumLines } from '@/lib/pricing';
 import { useSettings } from '@/lib/use-settings';
 import { ModalShell, PrimaryBtn, SecondaryBtn } from '@/components/ui';
-import { ITEM_OPTIONS, type MenuItem, type ShopSettings } from '@/lib/types';
+import type { MenuItem, ShopSettings } from '@/lib/types';
 
 type CartLine = {
   key: string;         // unique per line (so two lines of same item stay distinct)
@@ -780,35 +780,40 @@ function ItemOptionsModal({
         </div>
       )}
 
-      <p className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-2 font-semibold">
-        Modifiers
-      </p>
-      <div className="flex flex-wrap gap-2 mb-4">
-        {ITEM_OPTIONS.map((o) => {
-          const label = `${o.label} ${o.label_zh}`;
-          const active = selected.has(label);
-          return (
-            <button
-              key={o.key}
-              onClick={() => toggle(label)}
-              className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${
-                active
-                  ? 'text-white'
-                  : 'bg-[var(--cream-100)] text-[var(--ink-700)] border border-[var(--ink-200)] hover:border-[var(--brand-400)]'
-              }`}
-              style={
-                active
-                  ? {
-                      background: 'linear-gradient(135deg, var(--gold-500), var(--brand-600))',
-                    }
-                  : undefined
-              }
-            >
-              {o.label} · {o.label_zh}
-            </button>
-          );
-        })}
-      </div>
+      {item.options_available && item.options_available.length > 0 && (
+        <>
+          <p className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-2 font-semibold">
+            Modifiers
+          </p>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {item.options_available.map((o, idx) => {
+              const label = o.label_zh ? `${o.label} ${o.label_zh}` : o.label;
+              const active = selected.has(label);
+              return (
+                <button
+                  key={`${o.label}-${idx}`}
+                  onClick={() => toggle(label)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${
+                    active
+                      ? 'text-white'
+                      : 'bg-[var(--cream-100)] text-[var(--ink-700)] border border-[var(--ink-200)] hover:border-[var(--brand-400)]'
+                  }`}
+                  style={
+                    active
+                      ? {
+                          background: 'linear-gradient(135deg, var(--gold-500), var(--brand-600))',
+                        }
+                      : undefined
+                  }
+                >
+                  {o.label}
+                  {o.label_zh && <span> · {o.label_zh}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       <label className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-1.5 font-semibold">
         Note
