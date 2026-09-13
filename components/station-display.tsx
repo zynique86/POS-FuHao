@@ -338,6 +338,24 @@ export default function StationDisplay({
                             {item.name_zh_snapshot && (
                               <p className="text-sm text-white/60 ml-6">{item.name_zh_snapshot}</p>
                             )}
+                            {/* Modifiers — high-contrast yellow bar so the cook cannot miss them */}
+                            {item.options && (
+                              <div className="ml-6 mt-1.5 inline-flex items-center gap-1.5 rounded px-2 py-1 text-[13px] font-bold"
+                                   style={{
+                                     background: 'var(--gold-400)',
+                                     color: '#1c1917',
+                                   }}>
+                                <span>⚠</span>
+                                <span>{item.options}</span>
+                              </div>
+                            )}
+                            {item.note && (
+                              <div className="ml-6 mt-1 text-sm font-semibold italic"
+                                   style={{ color: 'var(--gold-300)' }}>
+                                <span className="text-white/60 mr-1">Note:</span>
+                                &ldquo;{item.note}&rdquo;
+                              </div>
+                            )}
                           </div>
                           <button
                             onClick={() =>
