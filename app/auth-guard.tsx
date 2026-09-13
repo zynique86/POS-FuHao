@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { fetchSettings } from '@/lib/settings';
 
 // Wraps every page. Enforces sign-in and paints the global top nav.
 // The /login route is a passthrough — no nav, no session gate.
@@ -13,6 +14,39 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   const [checked, setChecked] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
+  const [shop, setShop] = useState<{ name: string; nameZh: string }>({
+    name: 'Dim Sum POS',
+    nameZh: '點心 · Point of Sale',
+  });
+
+  // Shop name lives in shop_settings — pull it in and keep it fresh so the
+  // top nav reflects what the manager set in Admin → Settings, live.
+  useEffect(() => {
+    if (isLoginRoute) return;
+    let cancelled = false;
+    async function load() {
+      const s = await fetchSettings();
+      if (!cancelled) {
+        setShop({
+          name: s.shop_name || 'Dim Sum POS',
+          nameZh: s.shop_name_zh || '點心 · Point of Sale',
+        });
+      }
+    }
+    load();
+    const channel = supabase
+      .channel('nav-settings')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'shop_settings' },
+        () => load()
+      )
+      .subscribe();
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [isLoginRoute]);
 
   useEffect(() => {
     if (isLoginRoute) {
@@ -65,10 +99,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   return (
     <>
       <header className="sticky top-0 z-40 backdrop-blur bg-[var(--cream-50)]/85 border-b border-[var(--ink-200)]">
-        <div className="max-w-[1600px] mx-auto flex items-center justify-between px-4 md:px-6 h-14">
-          <a href="/" className="flex items-center gap-2 group">
+        <div className="max-w-[1600px] mx-auto flex items-center gap-3 px-3 md:px-6 h-14">
+          <a href="/" className="flex items-center gap-2 shrink-0">
             <span
-              className="w-9 h-9 rounded-[10px] flex items-center justify-center text-xl"
+              className="w-9 h-9 rounded-[10px] flex items-center justify-center text-xl shrink-0"
               style={{
                 background:
                   'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
@@ -77,17 +111,18 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             >
               🥟
             </span>
-            <span className="hidden sm:flex flex-col leading-tight">
-              <span className="font-bold text-[var(--ink-900)] text-sm">
-                Dim Sum POS
+            <span className="hidden md:flex flex-col leading-tight min-w-0">
+              <span className="font-bold text-[var(--ink-900)] text-sm truncate max-w-[160px]">
+                {shop.name}
               </span>
-              <span className="text-[10px] uppercase tracking-[0.15em] text-[var(--ink-500)]">
-                點心 · Point of Sale
+              <span className="text-[10px] uppercase tracking-[0.15em] text-[var(--ink-500)] truncate max-w-[160px]">
+                {shop.nameZh}
               </span>
             </span>
           </a>
 
-          <nav className="flex items-center gap-1">
+          {/* Nav pills — scroll horizontally when they don't fit */}
+          <nav className="flex-1 flex items-center gap-1 overflow-x-auto no-scrollbar">
             <NavLink href="/"        active={pathname === '/'}                        label="POS" />
             <NavLink href="/kitchen" active={pathname === '/kitchen'}                 label="Kitchen" />
             <NavLink href="/bar"     active={pathname === '/bar'}                     label="Bar" />
@@ -96,9 +131,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             <NavLink href="/admin"   active={pathname?.startsWith('/admin') ?? false} label="Admin" />
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <span
-              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
               style={{
                 background:
                   'linear-gradient(135deg, var(--brand-500), var(--brand-700))',
@@ -112,7 +147,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                 await supabase.auth.signOut();
                 router.replace('/login');
               }}
-              className="text-xs text-[var(--ink-500)] hover:text-[var(--brand-600)] font-medium hidden sm:block"
+              className="text-xs text-[var(--ink-500)] hover:text-[var(--brand-600)] font-medium hidden md:block"
             >
               Sign out
             </button>
@@ -136,7 +171,7 @@ function NavLink({
   return (
     <a
       href={href}
-      className={`px-3 py-1.5 rounded-full text-sm font-semibold transition-colors ${
+      className={`px-3 py-1.5 rounded-full text-sm font-semibold transition-colors whitespace-nowrap ${
         active
           ? 'bg-[var(--brand-600)] text-white shadow-sm'
           : 'text-[var(--ink-700)] hover:bg-[var(--cream-200)]'

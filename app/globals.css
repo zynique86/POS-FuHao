@@ -120,6 +120,10 @@ body::before {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--ink-300); background-clip: content-box; }
 
+/* Hide scrollbar on horizontally-scrolling elements (nav pills, tabs). */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
 /* Print — Z-report */
 @media print {
   header nav, header button, .no-print { display: none !important; }

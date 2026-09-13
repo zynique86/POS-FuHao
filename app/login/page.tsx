@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { fetchSettings } from '@/lib/settings';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -10,6 +11,19 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [shop, setShop] = useState<{ name: string; nameZh: string }>({
+    name: 'Dim Sum POS',
+    nameZh: '點心 · Staff sign-in',
+  });
+
+  useEffect(() => {
+    fetchSettings().then((s) => {
+      setShop({
+        name: s.shop_name || 'Dim Sum POS',
+        nameZh: (s.shop_name_zh || '點心') + ' · Staff sign-in',
+      });
+    });
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -56,9 +70,9 @@ export default function LoginPage() {
           >
             🥟
           </div>
-          <h1 className="text-2xl font-bold text-[var(--ink-900)]">Dim Sum POS</h1>
+          <h1 className="text-2xl font-bold text-[var(--ink-900)]">{shop.name}</h1>
           <p className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)] mt-1">
-            點心 · Staff sign-in
+            {shop.nameZh}
           </p>
         </div>
 

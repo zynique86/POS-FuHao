@@ -693,9 +693,11 @@ function UnpaidCard({ order, onOpen }: { order: Order; onOpen: () => void }) {
       <p className="text-xs text-[var(--ink-500)] mb-3">
         {active.length} item{active.length === 1 ? '' : 's'}
       </p>
-      <div className="flex items-baseline justify-between border-t border-[var(--ink-100)] pt-3">
-        <span className="text-sm text-[var(--ink-500)]">{partial ? 'Remaining' : 'Total'}</span>
-        <span className="text-xl font-mono font-bold text-[var(--brand-700)]">
+      <div className="flex items-baseline gap-3 border-t border-[var(--ink-100)] pt-3">
+        <span className="text-sm text-[var(--ink-500)] flex-1">
+          {partial ? 'Remaining' : 'Total'}
+        </span>
+        <span className="text-xl font-mono font-bold text-[var(--brand-700)] whitespace-nowrap">
           RM {(partial ? remaining : Number(order.total)).toFixed(2)}
         </span>
       </div>

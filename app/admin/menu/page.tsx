@@ -273,13 +273,19 @@ export default function AdminMenuPage() {
           onClick={() => !saving && setDraft(null)}
         >
           <div
-            className="bg-white rounded-3xl max-w-md w-full p-6 animate-rise"
+            className="bg-white rounded-3xl max-w-md w-full flex flex-col max-h-[95vh] animate-rise"
             onClick={(e) => e.stopPropagation()}
             style={{ boxShadow: 'var(--shadow-lg)' }}
           >
-            <h2 className="text-xl font-bold text-[var(--ink-900)] mb-4">
-              {draft.id ? 'Edit item' : 'Add item'}
-            </h2>
+            {/* Sticky header */}
+            <div className="shrink-0 px-6 pt-6 pb-3 border-b border-[var(--ink-100)]">
+              <h2 className="text-xl font-bold text-[var(--ink-900)]">
+                {draft.id ? 'Edit item' : 'Add item'}
+              </h2>
+            </div>
+
+            {/* Scrollable body */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
 
             {/* Image uploader */}
             <div className="mb-4">
@@ -532,12 +538,16 @@ export default function AdminMenuPage() {
             </label>
 
             {err && <ErrorBanner>{err}</ErrorBanner>}
+            </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <SecondaryBtn onClick={() => setDraft(null)} disabled={saving}>Cancel</SecondaryBtn>
-              <PrimaryBtn onClick={save} disabled={saving}>
-                {saving ? 'Saving…' : 'Save'}
-              </PrimaryBtn>
+            {/* Sticky footer with Save/Cancel — always visible */}
+            <div className="shrink-0 px-6 py-4 border-t border-[var(--ink-100)]">
+              <div className="grid grid-cols-2 gap-2">
+                <SecondaryBtn onClick={() => setDraft(null)} disabled={saving}>Cancel</SecondaryBtn>
+                <PrimaryBtn onClick={save} disabled={saving}>
+                  {saving ? 'Saving…' : 'Save'}
+                </PrimaryBtn>
+              </div>
             </div>
           </div>
         </div>
