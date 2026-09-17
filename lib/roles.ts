@@ -1,16 +1,18 @@
-// Role lookup — used by pages that need to gate features by permission tier.
+// Role lookup — SIMPLIFIED.
 //
-// Every signed-in user is joined against the `staff` table by user_id to find
-// their role.  If the row is missing we assume the safest default: cashier.
-// Owners have full access; supervisors can void/refund/discount; cashiers can
-// only take orders and payments.
+// Anyone signed in to Supabase Auth gets full access.  No role tiers.
+// The `can()` helper always returns true so existing call sites keep
+// compiling and every gated action is allowed.
+//
+// If you ever want to bring roles back, restore the earlier version
+// from git history.
 
 import { supabase } from './supabase';
 import type { StaffRole } from './types';
 
 export type CurrentUser = {
   email: string | null;
-  role: StaffRole;
+  role: StaffRole;   // always 'owner' in this simplified build
   name: string | null;
 };
 
@@ -21,22 +23,8 @@ export async function getCurrentUser(force = false): Promise<CurrentUser> {
 
   const { data: sess } = await supabase.auth.getSession();
   const email = sess?.session?.user?.email ?? null;
-  const uid = sess?.session?.user?.id ?? null;
 
-  let role: StaffRole = 'cashier';
-  let name: string | null = email;
-
-  if (uid) {
-    const { data } = await supabase
-      .from('staff')
-      .select('name, role')
-      .eq('user_id', uid)
-      .maybeSingle();
-    if (data?.role) role = data.role as StaffRole;
-    if (data?.name) name = data.name;
-  }
-
-  cache = { email, role, name };
+  cache = { email, role: 'owner', name: email };
   return cache;
 }
 
@@ -44,45 +32,14 @@ export function clearRoleCache() {
   cache = null;
 }
 
-// --- Permission helpers ---------------------------------------------------
-
-export function can(role: StaffRole, capability: Capability): boolean {
-  return CAPABILITIES[capability].includes(role);
-}
-
+// Capability check — always allows.  Kept as a function so existing
+// `can(role, 'refund')` call sites don't need to be edited.
 export type Capability =
-  | 'view_pos'          // waiter can take orders
-  | 'view_kitchen'      // watch station
-  | 'view_bar'
-  | 'view_cashier'      // take payments
-  | 'void'              // cancel a sent order
-  | 'refund'            // refund a paid order
-  | 'discount'          // apply a discount at cashier
-  | 'change_price'      // edit prices in menu
-  | 'edit_menu'         // add / edit menu items
-  | 'view_admin'        // see admin index
-  | 'view_reports'      // dashboards & reports
-  | 'view_profit'       // monthly profit + expenses
-  | 'edit_expenses'     // enter wages, purchases, etc.
-  | 'edit_staff'        // manage staff roles
-  | 'view_audit'        // audit log
-  | 'edit_settings';
+  | 'view_pos' | 'view_kitchen' | 'view_bar' | 'view_cashier'
+  | 'void' | 'refund' | 'discount' | 'change_price' | 'edit_menu'
+  | 'view_admin' | 'view_reports' | 'view_profit' | 'edit_expenses'
+  | 'edit_staff' | 'view_audit' | 'edit_settings';
 
-const CAPABILITIES: Record<Capability, StaffRole[]> = {
-  view_pos:       ['cashier', 'supervisor', 'owner'],
-  view_kitchen:   ['cashier', 'supervisor', 'owner'],
-  view_bar:       ['cashier', 'supervisor', 'owner'],
-  view_cashier:   ['cashier', 'supervisor', 'owner'],
-  void:           ['supervisor', 'owner'],
-  refund:         ['supervisor', 'owner'],
-  discount:       ['supervisor', 'owner'],
-  change_price:   ['owner'],
-  edit_menu:      ['supervisor', 'owner'],
-  view_admin:     ['supervisor', 'owner'],
-  view_reports:   ['supervisor', 'owner'],
-  view_profit:    ['owner'],
-  edit_expenses:  ['owner'],
-  edit_staff:     ['owner'],
-  view_audit:     ['owner'],
-  edit_settings:  ['owner'],
-};
+export function can(_role: StaffRole, _capability: Capability): boolean {
+  return true;
+}

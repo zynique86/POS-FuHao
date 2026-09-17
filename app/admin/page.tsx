@@ -30,7 +30,6 @@ export default function AdminPage() {
           <NavCard href="/admin/monthly-report" emoji="📊" label="Monthly Report" zh="月結報表" />
           <NavCard href="/admin/rankings"       emoji="🏆" label="Rankings"       zh="銷售排行" />
           <NavCard href="/admin/audit-log"      emoji="🔒" label="Audit Log"      zh="操作日誌" />
-          <NavCard href="/admin/staff"          emoji="👤" label="Staff"          zh="員工" />
           <NavCard href="/admin/settings"       emoji="⚙️" label="Settings"       zh="設置" />
         </nav>
       </header>

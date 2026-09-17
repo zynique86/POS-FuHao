@@ -16,12 +16,10 @@
 //   flour, etc.) — the system never splits them into 點心 / 包點 / 飯.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import {
   listExpensesForDate,
   insertExpense,
   deleteExpense,
-  sumExpenses,
 } from '@/lib/expenses';
 import { getCurrentUser } from '@/lib/roles';
 import {
@@ -38,12 +36,12 @@ import type {
   Expense,
   ExpenseKind,
   PayMethod,
-  Staff,
 } from '@/lib/types';
 import {
   EXPENSE_LABELS,
   PAY_METHOD_LABELS,
 } from '@/lib/types';
+import { supabase } from '@/lib/supabase';
 
 // Which tab is currently active.  Every tab has its own quick-entry form
 // but they all write to the same `expenses` table.
@@ -75,7 +73,6 @@ export default function ExpensesPage() {
   const [date, setDate] = useState<string>(todayISO());
   const [tab, setTab] = useState<Tab>('purchase');
   const [rows, setRows] = useState<Expense[]>([]);
-  const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [me, setMe] = useState<{ email: string | null }>({ email: null });
@@ -84,13 +81,11 @@ export default function ExpensesPage() {
     setLoading(true);
     setErr(null);
     try {
-      const [list, st, u] = await Promise.all([
+      const [list, u] = await Promise.all([
         listExpensesForDate(date),
-        supabase.from('staff').select('*').eq('active', true).order('name'),
         getCurrentUser(),
       ]);
       setRows(list);
-      setStaff((st.data ?? []) as Staff[]);
       setMe({ email: u.email });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -188,7 +183,6 @@ export default function ExpensesPage() {
             <ExpenseForm
               kind={tab}
               date={date}
-              staff={staff}
               actorEmail={me.email}
               onSaved={onSaved}
             />
@@ -332,11 +326,10 @@ function ExpenseRow({ row, onDelete }: { row: Expense; onDelete: () => void }) {
 // -------------------------------------------------------------------------
 
 function ExpenseForm({
-  kind, date, staff, actorEmail, onSaved,
+  kind, date, actorEmail, onSaved,
 }: {
   kind: ExpenseKind;
   date: string;
-  staff: Staff[];
   actorEmail: string | null;
   onSaved: () => void | Promise<void>;
 }) {
@@ -345,8 +338,8 @@ function ExpenseForm({
   const [supplier, setSupplier]       = useState<string>('');
   const [payMethod, setPayMethod]     = useState<PayMethod>('cash');
   const [note, setNote]               = useState<string>('');
-  // Wages-specific
-  const [staffId, setStaffId]         = useState<number | null>(null);
+  // Wages-specific — just a plain text name field now, no staff dropdown.
+  const [staffName, setStaffName]     = useState<string>('');
   const [hours, setHours]             = useState<string>('');
   const [normalWage, setNormalWage]   = useState<string>('');
   const [otAmount, setOtAmount]       = useState<string>('');
@@ -374,7 +367,7 @@ function ExpenseForm({
     setSupplier('');
     setPayMethod('cash');
     setNote('');
-    setStaffId(null);
+    setStaffName('');
     setHours('');
     setNormalWage('');
     setOtAmount('');
@@ -402,11 +395,10 @@ function ExpenseForm({
       const amt = Number(amount);
       if (!amt || amt <= 0) throw new Error('Enter an amount greater than 0');
 
-      // For wages, require a staff pick
-      if (kind === 'wages' && !staffId) throw new Error('Select a staff member');
+      // For wages, require a name
+      if (kind === 'wages' && !staffName.trim()) throw new Error('Enter a staff name');
 
       const receiptUrl = await uploadReceipt();
-      const chosenStaff = staff.find((s) => s.id === staffId) ?? null;
 
       await insertExpense({
         kind,
@@ -416,8 +408,8 @@ function ExpenseForm({
         description: description || null,
         supplier: kind === 'purchase' ? supplier || null : null,
         receipt_url: receiptUrl,
-        staff_id: kind === 'wages' ? staffId : null,
-        staff_name: kind === 'wages' ? chosenStaff?.name ?? null : null,
+        staff_id: null,
+        staff_name: kind === 'wages' ? staffName.trim() : null,
         hours: kind === 'wages' && hours ? Number(hours) : null,
         normal_wage: kind === 'wages' && normalWage ? Number(normalWage) : null,
         ot_amount: kind === 'wages' && otAmount ? Number(otAmount) : null,
@@ -438,23 +430,18 @@ function ExpenseForm({
     <form onSubmit={onSubmit}>
       {err && <ErrorBanner>{err}</ErrorBanner>}
 
-      {/* ------- Wages: staff picker + hours + parts breakdown ------- */}
+      {/* ------- Wages: staff name + hours + parts breakdown ------- */}
       {kind === 'wages' && (
         <>
-          <Field label="Staff · 員工">
-            <select
-              value={staffId ?? ''}
-              onChange={(e) => setStaffId(e.target.value ? Number(e.target.value) : null)}
+          <Field label="Staff name · 員工姓名">
+            <input
+              type="text"
+              value={staffName}
+              onChange={(e) => setStaffName(e.target.value)}
               className={inputBase}
+              placeholder="e.g. Ah Hock"
               required
-            >
-              <option value="">— select staff —</option>
-              {staff.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} · {s.role}
-                </option>
-              ))}
-            </select>
+            />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Hours · 工時">
