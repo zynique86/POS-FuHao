@@ -348,45 +348,59 @@ export default function POSTerminal({
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6 mt-6">
         <section>
-          {/* Filters — category chips (primary) + station chips (secondary) */}
-          <div className="sticky top-14 z-10 -mx-4 md:-mx-6 px-4 md:px-6 py-3 bg-[var(--cream-50)]/85 backdrop-blur border-b border-[var(--ink-200)] mb-6 space-y-2">
+          {/* Sticky filter bar.  Two visual tiers so waiters know which
+              control they use most:
+                1. Category chips = primary (bigger, coloured accent)
+                2. Station chips  = secondary (small pill row on the side) */}
+          <div className="sticky top-14 z-10 -mx-4 md:-mx-6 px-4 md:px-6 py-3 bg-[var(--cream-50)]/90 backdrop-blur border-b border-[var(--ink-200)] mb-6">
 
-            {/* Category filter — the fast way to find a dish */}
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
-              <StationPill
-                active={categoryFilter === 'all'}
-                onClick={() => setCategoryFilter('all')}
-                count={categoryCounts.all ?? 0}
-              >
-                All · 全部
-              </StationPill>
-              {MENU_CATEGORIES.map((c) => {
-                const n = categoryCounts[c.key] ?? 0;
-                if (n === 0 && categoryFilter !== c.key) return null;
-                return (
-                  <StationPill
-                    key={c.key}
-                    active={categoryFilter === c.key}
-                    onClick={() => setCategoryFilter(c.key)}
-                    count={n}
-                  >
-                    {c.emoji} {c.label} · {c.label_zh}
-                  </StationPill>
-                );
-              })}
+            {/* Row 1 — Category filter (primary) */}
+            <div className="flex items-center gap-3">
+              <span className="hidden md:inline text-[10px] uppercase tracking-widest text-[var(--ink-500)] font-bold shrink-0">
+                Category · 分類
+              </span>
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar flex-1">
+                <FilterChip
+                  active={categoryFilter === 'all'}
+                  onClick={() => setCategoryFilter('all')}
+                  count={categoryCounts.all ?? 0}
+                  variant="primary"
+                >
+                  <span className="text-base">🍽️</span>
+                  <span>All · 全部</span>
+                </FilterChip>
+                {MENU_CATEGORIES.map((c) => {
+                  const n = categoryCounts[c.key] ?? 0;
+                  if (n === 0 && categoryFilter !== c.key) return null;
+                  return (
+                    <FilterChip
+                      key={c.key}
+                      active={categoryFilter === c.key}
+                      onClick={() => setCategoryFilter(c.key)}
+                      count={n}
+                      variant="primary"
+                    >
+                      <span className="text-base">{c.emoji}</span>
+                      <span>{c.label}</span>
+                      <span className="text-[var(--ink-400)] font-normal hidden sm:inline">
+                        · {c.label_zh}
+                      </span>
+                    </FilterChip>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Station filter — kept as a smaller secondary control */}
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
-              <StationPill active={stationFilter === 'all'} onClick={() => setStationFilter('all')} count={stationCounts.all}>
-                All
-              </StationPill>
-              <StationPill active={stationFilter === 'kitchen'} onClick={() => setStationFilter('kitchen')} count={stationCounts.kitchen}>
-                👨‍🍳 Kitchen
-              </StationPill>
-              <StationPill active={stationFilter === 'bar'} onClick={() => setStationFilter('bar')} count={stationCounts.bar}>
-                🫖 Bar
-              </StationPill>
+            {/* Row 2 — Station filter (secondary, subtler) */}
+            <div className="flex items-center gap-3 mt-2 pt-2 border-t border-[var(--ink-100)]">
+              <span className="text-[10px] uppercase tracking-widest text-[var(--ink-500)] font-bold shrink-0">
+                Station · 站
+              </span>
+              <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1 no-scrollbar flex-1">
+                <FilterChip active={stationFilter === 'all'}     onClick={() => setStationFilter('all')}     count={stationCounts.all}     variant="secondary">All</FilterChip>
+                <FilterChip active={stationFilter === 'kitchen'} onClick={() => setStationFilter('kitchen')} count={stationCounts.kitchen} variant="secondary">👨‍🍳 Kitchen</FilterChip>
+                <FilterChip active={stationFilter === 'bar'}     onClick={() => setStationFilter('bar')}     count={stationCounts.bar}     variant="secondary">🫖 Bar</FilterChip>
+              </div>
             </div>
           </div>
 
@@ -447,8 +461,10 @@ export default function POSTerminal({
           />
         )}
 
-        {/* Cart */}
-        <aside className="lg:sticky lg:top-[76px] h-fit">
+        {/* Cart — sticky on desktop; on mobile it lives below the menu
+             (natural page flow), plus a floating summary chip pinned to
+             the bottom of the viewport for one-tap access. */}
+        <aside id="cart-panel" className="lg:sticky lg:top-[76px] h-fit scroll-mt-24 pb-24 lg:pb-0">
           <CartPanel
             tableNo={tableNo}
             existing={existing}
@@ -465,6 +481,24 @@ export default function POSTerminal({
           />
         </aside>
       </div>
+
+      {/* Mobile-only floating cart summary — appears when cart has items */}
+      {newCount > 0 && (
+        <a
+          href="#cart-panel"
+          className="lg:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 px-5 py-3 rounded-full text-white font-bold shadow-lg active:scale-[0.98] transition"
+          style={{
+            background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
+            boxShadow: 'var(--shadow-brand)',
+          }}
+        >
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/25 text-xs font-mono">
+            {newCount}
+          </span>
+          <span>View cart · 查看</span>
+          <span className="font-mono">RM {breakdown.total.toFixed(2)}</span>
+        </a>
+      )}
     </main>
   );
 }
@@ -517,46 +551,65 @@ function PageHeader({
 
 // ─── menu button ──────────────────────────────────────────────────────────
 
-function StationPill({
+// Unified filter chip.  `primary` is used for category (bigger, brand
+// coloured when active); `secondary` for station (compact, subtler).
+function FilterChip({
   active,
   onClick,
   count,
   children,
+  variant = 'primary',
 }: {
   active: boolean;
   onClick: () => void;
   count: number;
   children: React.ReactNode;
+  variant?: 'primary' | 'secondary';
 }) {
+  const isPrimary = variant === 'primary';
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition ${
+      className={[
+        'rounded-full whitespace-nowrap transition inline-flex items-center gap-1.5',
+        isPrimary
+          ? 'px-3.5 md:px-4 py-2 text-sm font-bold'
+          : 'px-3 py-1 text-xs font-semibold',
         active
-          ? 'bg-[var(--brand-600)] text-white shadow-md'
-          : 'bg-white text-[var(--ink-700)] border border-[var(--ink-200)] hover:border-[var(--brand-400)]'
-      }`}
-      style={active ? { boxShadow: 'var(--shadow-brand)' } : undefined}
+          ? isPrimary
+            ? 'bg-[var(--brand-600)] text-white'
+            : 'bg-[var(--ink-900)] text-white'
+          : 'bg-white text-[var(--ink-700)] border border-[var(--ink-200)] hover:border-[var(--brand-400)]',
+      ].join(' ')}
+      style={active && isPrimary ? { boxShadow: 'var(--shadow-brand)' } : undefined}
     >
       {children}
-      <span className={`ml-2 text-xs ${active ? 'text-white/80' : 'text-[var(--ink-400)]'}`}>
+      <span className={`ml-1 font-mono ${isPrimary ? 'text-[11px]' : 'text-[10px]'} ${active ? 'text-white/80' : 'text-[var(--ink-400)]'}`}>
         {count}
       </span>
     </button>
   );
 }
 
+// Kept for compatibility with any other place the old name is used.
+function StationPill(props: {
+  active: boolean;
+  onClick: () => void;
+  count: number;
+  children: React.ReactNode;
+}) {
+  return <FilterChip {...props} variant="primary" />;
+}
+
 function MenuButton({ item, onAdd }: { item: MenuItem; onAdd: () => void }) {
   return (
     <button
       onClick={onAdd}
-      className="card-hover text-left bg-white rounded-2xl border border-[var(--ink-200)] active:scale-[0.98] overflow-hidden flex flex-col"
+      className="card-hover text-left bg-white rounded-2xl border border-[var(--ink-200)] active:scale-[0.98] overflow-hidden flex flex-col h-full"
       style={{ boxShadow: 'var(--shadow-sm)' }}
     >
-      {item.image_url && (
-        <div
-          className="aspect-[4/3] w-full overflow-hidden bg-[var(--cream-100)]"
-        >
+      {item.image_url ? (
+        <div className="aspect-[4/3] w-full overflow-hidden bg-[var(--cream-100)]">
           <img
             src={item.image_url}
             alt=""
@@ -564,22 +617,28 @@ function MenuButton({ item, onAdd }: { item: MenuItem; onAdd: () => void }) {
             className="w-full h-full object-cover"
           />
         </div>
+      ) : (
+        <div className="aspect-[4/3] w-full flex items-center justify-center bg-[var(--cream-100)] text-4xl opacity-40">
+          {item.station === 'bar' ? '🫖' : '🥟'}
+        </div>
       )}
-      <div className="p-4 flex-1 flex flex-col">
-        <div className="min-h-[52px]">
-          <h3 className="font-bold text-[var(--ink-900)] leading-snug text-[15px]">
+      <div className="p-3 md:p-4 flex-1 flex flex-col">
+        <div className="flex-1 min-h-[42px]">
+          <h3 className="font-bold text-[var(--ink-900)] leading-snug text-sm md:text-[15px] line-clamp-2">
             {item.name_en}
           </h3>
           {item.name_zh && (
-            <p className="text-sm text-[var(--ink-500)] mt-0.5">{item.name_zh}</p>
+            <p className="text-xs md:text-sm text-[var(--ink-500)] mt-0.5 line-clamp-1">
+              {item.name_zh}
+            </p>
           )}
         </div>
-        <div className="mt-3 flex items-baseline justify-between">
-          <span className="text-[var(--brand-700)] font-mono font-bold">
+        <div className="mt-2.5 md:mt-3 flex items-center justify-between gap-2">
+          <span className="text-[var(--brand-700)] font-mono font-bold text-sm md:text-base whitespace-nowrap">
             RM {Number(item.price).toFixed(2)}
           </span>
           <span
-            className="text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center text-white transition"
+            className="text-sm font-bold w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-white shrink-0"
             style={{
               background: 'linear-gradient(135deg, var(--brand-500), var(--brand-700))',
             }}
