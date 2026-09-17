@@ -10,9 +10,6 @@
 // We label it "estimated" because Food/Material Purchases is the actual
 // cash spent on ingredients in the month, not the accounting COGS.
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {

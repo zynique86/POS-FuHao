@@ -3,9 +3,6 @@
 // Audit Log (操作日誌) — read-only viewer of every sensitive action:
 // void, refund, discount, price change, deletions.  Owner-only.
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 import { useCallback, useEffect, useState } from 'react';
 import { AdminPageHeader, ContentCard, ErrorBanner, EmptyState } from '@/components/ui';
 import { listAudit } from '@/lib/expenses';

@@ -15,9 +15,6 @@
 //   underneath are just for your own paper trail (supplier, meat,
 //   flour, etc.) — the system never splits them into 點心 / 包點 / 飯.
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {

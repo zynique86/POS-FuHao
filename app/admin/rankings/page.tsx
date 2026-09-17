@@ -8,9 +8,6 @@
 //
 // Date range is user-choosable — this month by default.
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { AdminPageHeader, ContentCard, ErrorBanner, EmptyState } from '@/components/ui';
