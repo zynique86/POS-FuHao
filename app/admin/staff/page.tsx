@@ -1,7 +1,8 @@
 'use client';
 
-// Staff CRUD — add names + PINs + roles.
-// The very first staff row you add unlocks PIN gating everywhere else.
+// Staff CRUD — three tiers: cashier / supervisor / owner.
+// Monthly-salaried staff can also record their base salary here so
+// the Monthly Report includes it in "expenses".
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -11,18 +12,24 @@ import {
   SecondaryBtn,
   ErrorBanner,
   EmptyState,
+  Field,
+  inputBase,
 } from '@/components/ui';
 import { listStaff, type Staff, type StaffRole } from '@/lib/staff';
+import { ROLE_LABELS } from '@/lib/types';
+import { logAudit } from '@/lib/expenses';
+import { getCurrentUser } from '@/lib/roles';
 
 type Draft = {
   id?: number;
   name: string;
   pin: string;
   role: StaffRole;
+  monthly_salary: string;
   active: boolean;
 };
 
-const EMPTY: Draft = { name: '', pin: '', role: 'cashier', active: true };
+const EMPTY: Draft = { name: '', pin: '', role: 'cashier', monthly_salary: '', active: true };
 
 export default function AdminStaffPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -47,13 +54,30 @@ export default function AdminStaffPage() {
       name: draft.name.trim(),
       pin: draft.pin.trim(),
       role: draft.role,
+      monthly_salary: draft.monthly_salary ? Number(draft.monthly_salary) : null,
       active: draft.active,
     };
-    const { error } = draft.id
-      ? await supabase.from('staff').update(payload).eq('id', draft.id)
-      : await supabase.from('staff').insert(payload);
+    const me = await getCurrentUser();
+    if (draft.id) {
+      const prev = staff.find((s) => s.id === draft.id);
+      const { error } = await supabase.from('staff').update(payload).eq('id', draft.id);
+      if (error) { setBusy(false); return setErr(error.message); }
+      if (prev && prev.role !== draft.role) {
+        await logAudit({
+          actor_email: me.email,
+          actor_role: me.role,
+          action: 'staff_role_change',
+          target_type: 'staff',
+          target_id: draft.id,
+          reason: `${prev.role} → ${draft.role}`,
+          details: { name: prev.name },
+        });
+      }
+    } else {
+      const { error } = await supabase.from('staff').insert(payload);
+      if (error) { setBusy(false); return setErr(error.message); }
+    }
     setBusy(false);
-    if (error) return setErr(error.message);
     setDraft(null);
     load();
   }
@@ -63,8 +87,17 @@ export default function AdminStaffPage() {
     load();
   }
   async function del(s: Staff) {
-    if (!confirm(`Delete ${s.name}?`)) return;
+    if (!confirm(`Delete ${s.name}? / 確定刪除嗎?`)) return;
+    const me = await getCurrentUser();
     await supabase.from('staff').delete().eq('id', s.id);
+    await logAudit({
+      actor_email: me.email,
+      actor_role: me.role,
+      action: 'staff_delete',
+      target_type: 'staff',
+      target_id: s.id,
+      details: { name: s.name, role: s.role },
+    });
     load();
   }
 
@@ -73,7 +106,7 @@ export default function AdminStaffPage() {
       <AdminPageHeader
         title="Staff"
         titleZh="員工"
-        sub="Add cashiers and managers. Managers/admins can access this dashboard."
+        sub="Cashier · Supervisor · Owner tiers control what each staff can do / 三級權限"
         right={
           <button
             onClick={() => { setDraft({ ...EMPTY }); setErr(null); }}
@@ -83,7 +116,7 @@ export default function AdminStaffPage() {
               boxShadow: 'var(--shadow-brand)',
             }}
           >
-            + Add staff
+            + Add staff · 添加員工
           </button>
         }
       />
@@ -94,56 +127,74 @@ export default function AdminStaffPage() {
         <EmptyState
           emoji="👤"
           title="No staff yet"
-          sub="Add your first manager. Their PIN then gates the dashboard."
+          sub="Add your first owner. Their PIN then gates sensitive actions."
         />
       ) : (
         <section className="bg-white rounded-3xl border border-[var(--ink-200)] overflow-hidden"
                  style={{ boxShadow: 'var(--shadow-sm)' }}>
           <ul className="divide-y divide-[var(--ink-100)]">
-            {staff.map((s) => (
-              <li key={s.id} className={`flex flex-wrap items-center gap-3 px-5 py-4 ${!s.active ? 'opacity-60 bg-[var(--ink-100)]/40' : ''}`}>
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold"
-                  style={{
-                    background: s.role === 'admin'
-                      ? 'linear-gradient(135deg, var(--brand-700), var(--brand-900))'
-                      : s.role === 'manager'
-                      ? 'linear-gradient(135deg, var(--gold-500), var(--gold-600))'
-                      : 'linear-gradient(135deg, var(--ink-500), var(--ink-700))',
-                  }}
-                >
-                  {s.name.trim()[0]?.toUpperCase() ?? '?'}
-                </div>
-                <div className="flex-1 min-w-[200px]">
-                  <div className="font-bold text-[var(--ink-900)]">{s.name}</div>
-                  <div className="text-xs text-[var(--ink-500)] uppercase tracking-widest">
-                    {s.role} · PIN {s.pin.replace(/./g, '•')}
+            {staff.map((s) => {
+              const roleMeta = ROLE_LABELS[s.role] ?? ROLE_LABELS.cashier;
+              return (
+                <li key={s.id} className={`flex flex-wrap items-center gap-3 px-5 py-4 ${!s.active ? 'opacity-60 bg-[var(--ink-100)]/40' : ''}`}>
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shrink-0"
+                    style={{
+                      background: s.role === 'owner'
+                        ? 'linear-gradient(135deg, var(--brand-700), var(--brand-900))'
+                        : s.role === 'supervisor'
+                        ? 'linear-gradient(135deg, var(--gold-500), var(--gold-600))'
+                        : 'linear-gradient(135deg, var(--ink-500), var(--ink-700))',
+                    }}
+                  >
+                    {s.name.trim()[0]?.toUpperCase() ?? '?'}
                   </div>
-                </div>
-                <button
-                  onClick={() => toggle(s)}
-                  className={`text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest ${
-                    s.active
-                      ? 'bg-[var(--jade-100)] text-[var(--jade-600)]'
-                      : 'bg-[var(--ink-200)] text-[var(--ink-500)]'
-                  }`}
-                >
-                  {s.active ? 'Active' : 'Disabled'}
-                </button>
-                <button
-                  onClick={() => { setDraft({ id: s.id, name: s.name, pin: s.pin, role: s.role, active: s.active }); setErr(null); }}
-                  className="text-xs px-3 py-2 rounded-lg bg-[var(--cream-100)] hover:bg-[var(--cream-200)] text-[var(--ink-800)] font-bold"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => del(s)}
-                  className="text-xs px-3 py-2 rounded-lg bg-[var(--brand-50)] hover:bg-[var(--brand-100)] text-[var(--brand-700)] font-bold"
-                >
-                  Delete
-                </button>
-              </li>
-            ))}
+                  <div className="flex-1 min-w-[200px]">
+                    <div className="font-bold text-[var(--ink-900)]">{s.name}</div>
+                    <div className="text-xs text-[var(--ink-500)] uppercase tracking-widest">
+                      {roleMeta.emoji} {roleMeta.label} · {roleMeta.label_zh} · PIN {s.pin.replace(/./g, '•')}
+                    </div>
+                    {s.monthly_salary != null && s.monthly_salary > 0 && (
+                      <div className="text-xs text-[var(--ink-500)] mt-0.5">
+                        Monthly salary · 月薪 RM {Number(s.monthly_salary).toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => toggle(s)}
+                    className={`text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest ${
+                      s.active
+                        ? 'bg-[var(--jade-100)] text-[var(--jade-600)]'
+                        : 'bg-[var(--ink-200)] text-[var(--ink-500)]'
+                    }`}
+                  >
+                    {s.active ? 'Active' : 'Disabled'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDraft({
+                        id: s.id,
+                        name: s.name,
+                        pin: s.pin,
+                        role: s.role,
+                        monthly_salary: s.monthly_salary != null ? String(s.monthly_salary) : '',
+                        active: s.active,
+                      });
+                      setErr(null);
+                    }}
+                    className="text-xs px-3 py-2 rounded-lg bg-[var(--cream-100)] hover:bg-[var(--cream-200)] text-[var(--ink-800)] font-bold"
+                  >
+                    Edit · 編輯
+                  </button>
+                  <button
+                    onClick={() => del(s)}
+                    className="text-xs px-3 py-2 rounded-lg bg-[var(--brand-50)] hover:bg-[var(--brand-100)] text-[var(--brand-700)] font-bold"
+                  >
+                    Delete · 刪除
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -158,39 +209,53 @@ export default function AdminStaffPage() {
             onClick={(e) => e.stopPropagation()}
             style={{ boxShadow: 'var(--shadow-lg)' }}
           >
-            <h2 className="text-xl font-bold mb-5">{draft.id ? 'Edit staff' : 'Add staff'}</h2>
+            <h2 className="text-xl font-bold mb-5">
+              {draft.id ? 'Edit staff · 編輯員工' : 'Add staff · 添加員工'}
+            </h2>
 
-            <F label="Name">
+            <Field label="Name · 姓名">
               <input
                 autoFocus
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+                className={inputBase}
               />
-            </F>
+            </Field>
 
-            <F label="PIN (4–6 digits)">
+            <Field label="PIN · 密碼 (4–6 digits)">
               <input
                 type="text"
                 inputMode="numeric"
                 pattern="\d*"
                 value={draft.pin}
                 onChange={(e) => setDraft({ ...draft, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
-                className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl font-mono text-2xl tracking-widest focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+                className={`${inputBase} font-mono text-2xl tracking-widest`}
               />
-            </F>
+            </Field>
 
-            <F label="Role">
+            <Field label="Role · 權限">
               <select
                 value={draft.role}
                 onChange={(e) => setDraft({ ...draft, role: e.target.value as StaffRole })}
-                className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+                className={inputBase}
               >
-                <option value="cashier">Cashier — can take payments</option>
-                <option value="manager">Manager — cashier + admin access</option>
-                <option value="admin">Admin — full access</option>
+                <option value="cashier">💳 Cashier · 收銀員 — take orders &amp; payments only</option>
+                <option value="supervisor">🎖️ Supervisor · 主管 — cashier + void, refund, discount</option>
+                <option value="owner">👑 Owner · 老闆 — full access</option>
               </select>
-            </F>
+            </Field>
+
+            <Field label="Monthly salary · 月薪 (RM, optional)" hint="Only for staff paid a fixed monthly wage. Leave blank for daily-paid staff.">
+              <input
+                type="number"
+                step="0.01"
+                min={0}
+                value={draft.monthly_salary}
+                onChange={(e) => setDraft({ ...draft, monthly_salary: e.target.value })}
+                className={inputBase}
+                placeholder="e.g. 2500"
+              />
+            </Field>
 
             <label className="flex items-center gap-2 mb-5 text-sm text-[var(--ink-800)] cursor-pointer">
               <input
@@ -199,29 +264,18 @@ export default function AdminStaffPage() {
                 onChange={(e) => setDraft({ ...draft, active: e.target.checked })}
                 className="w-4 h-4 accent-[var(--brand-600)]"
               />
-              Active
+              Active · 在職
             </label>
 
             {err && <ErrorBanner>{err}</ErrorBanner>}
 
             <div className="grid grid-cols-2 gap-2">
-              <SecondaryBtn onClick={() => setDraft(null)} disabled={busy}>Cancel</SecondaryBtn>
-              <PrimaryBtn onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</PrimaryBtn>
+              <SecondaryBtn onClick={() => setDraft(null)} disabled={busy}>Cancel · 取消</SecondaryBtn>
+              <PrimaryBtn onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save · 保存'}</PrimaryBtn>
             </div>
           </div>
         </div>
       )}
     </main>
-  );
-}
-
-function F({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block mb-3">
-      <span className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-1.5 font-semibold">
-        {label}
-      </span>
-      {children}
-    </label>
   );
 }

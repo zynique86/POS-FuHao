@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { AdminPageHeader, PrimaryBtn, SecondaryBtn, ErrorBanner, EmptyState } from '@/components/ui';
-import { SUGGESTED_MODIFIERS, type ItemModifier, type MenuItem, type PrintStation } from '@/lib/types';
+import { SUGGESTED_MODIFIERS, MENU_CATEGORIES, type ItemModifier, type MenuItem, type PrintStation } from '@/lib/types';
 
 type Draft = {
   id?: number;
@@ -17,6 +17,7 @@ type Draft = {
   category: string;
   sort_order: string;
   is_available: boolean;
+  temporarily_disabled: boolean;
   station: PrintStation;
 };
 const EMPTY: Draft = {
@@ -25,9 +26,10 @@ const EMPTY: Draft = {
   price: '',
   image_url: '',
   options_available: [],
-  category: 'Steamed',
+  category: 'Dim Sum',
   sort_order: '0',
   is_available: true,
+  temporarily_disabled: false,
   station: 'kitchen',
 };
 
@@ -93,7 +95,17 @@ export default function AdminMenuPage() {
       if (!m.has(c)) m.set(c, []);
       m.get(c)!.push(i);
     }
-    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
+    // Sort in the seven-category order defined in lib/types, with any
+    // unrecognised categories appended at the end alphabetically.
+    const order = MENU_CATEGORIES.map((c) => c.key);
+    return [...m.entries()].sort(([a], [b]) => {
+      const ia = order.indexOf(a);
+      const ib = order.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.localeCompare(b);
+    });
   }, [items]);
 
   function startAdd() {
@@ -111,6 +123,7 @@ export default function AdminMenuPage() {
       category: item.category || 'Other',
       sort_order: String(item.sort_order ?? 0),
       is_available: item.is_available !== false,
+      temporarily_disabled: item.temporarily_disabled === true,
       station: item.station ?? 'kitchen',
     });
     setErr(null);
@@ -132,6 +145,7 @@ export default function AdminMenuPage() {
       category: draft.category.trim() || 'Other',
       sort_order: Number(draft.sort_order) || 0,
       is_available: draft.is_available,
+      temporarily_disabled: draft.temporarily_disabled,
       station: draft.station,
     };
     const { error } = draft.id
@@ -143,8 +157,12 @@ export default function AdminMenuPage() {
     load();
   }
 
-  async function toggleAvailability(item: MenuItem) {
-    await supabase.from('menu_items').update({ is_available: !item.is_available }).eq('id', item.id);
+  async function toggleTempOff(item: MenuItem) {
+    // Toggling the "sold out today" flag, not the permanent availability.
+    await supabase
+      .from('menu_items')
+      .update({ temporarily_disabled: !item.temporarily_disabled })
+      .eq('id', item.id);
     load();
   }
   async function del(item: MenuItem) {
@@ -194,8 +212,21 @@ export default function AdminMenuPage() {
                   borderBottom: '1px solid var(--ink-100)',
                 }}
               >
-                <h2 className="text-sm font-bold text-[var(--ink-800)] uppercase tracking-widest">
-                  {category}
+                <h2 className="text-sm font-bold text-[var(--ink-800)] uppercase tracking-widest flex items-center gap-2">
+                  {(() => {
+                    const meta = MENU_CATEGORIES.find((c) => c.key === category);
+                    return meta ? (
+                      <>
+                        <span className="text-lg">{meta.emoji}</span>
+                        <span>{meta.label}</span>
+                        <span className="text-[var(--ink-500)] font-normal normal-case tracking-normal">
+                          · {meta.label_zh}
+                        </span>
+                      </>
+                    ) : (
+                      <span>{category}</span>
+                    );
+                  })()}
                 </h2>
                 <span className="text-xs text-[var(--ink-400)] font-mono">{list.length}</span>
               </div>
@@ -204,7 +235,11 @@ export default function AdminMenuPage() {
                   <li
                     key={item.id}
                     className={`flex flex-wrap items-center gap-3 px-5 py-4 ${
-                      item.is_available ? '' : 'bg-[var(--ink-100)]/50 opacity-60'
+                      !item.is_available
+                        ? 'bg-[var(--ink-100)]/50 opacity-60'
+                        : item.temporarily_disabled
+                        ? 'bg-[var(--gold-300)]/15'
+                        : ''
                     }`}
                   >
                     {item.image_url ? (
@@ -238,14 +273,21 @@ export default function AdminMenuPage() {
                       RM {Number(item.price).toFixed(2)}
                     </div>
                     <button
-                      onClick={() => toggleAvailability(item)}
+                      onClick={() => toggleTempOff(item)}
+                      title="Toggle sold-out-today"
                       className={`text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest ${
-                        item.is_available
-                          ? 'bg-[var(--jade-100)] text-[var(--jade-600)]'
-                          : 'bg-[var(--ink-200)] text-[var(--ink-500)]'
+                        !item.is_available
+                          ? 'bg-[var(--ink-200)] text-[var(--ink-500)]'
+                          : item.temporarily_disabled
+                          ? 'bg-[var(--gold-400)] text-[var(--ink-900)]'
+                          : 'bg-[var(--jade-100)] text-[var(--jade-600)]'
                       }`}
                     >
-                      {item.is_available ? 'Available' : 'Sold out'}
+                      {!item.is_available
+                        ? 'Hidden'
+                        : item.temporarily_disabled
+                        ? '售罄 Sold out'
+                        : 'Selling'}
                     </button>
                     <button
                       onClick={() => startEdit(item)}
@@ -385,23 +427,18 @@ export default function AdminMenuPage() {
               </Field>
             </div>
 
-            <Field label="Category">
-              <input
+            <Field label="Category · 分類">
+              <select
                 value={draft.category}
                 onChange={(e) => setDraft({ ...draft, category: e.target.value })}
-                list="cat-suggestions"
-                className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
-              />
-              <datalist id="cat-suggestions">
-                <option value="Steamed" />
-                <option value="Fried" />
-                <option value="Rice Noodle" />
-                <option value="Congee" />
-                <option value="Rice" />
-                <option value="Drinks" />
-                <option value="Dessert" />
-                <option value="Other" />
-              </datalist>
+                className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl bg-white focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+              >
+                {MENU_CATEGORIES.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.emoji}  {c.label} · {c.label_zh}
+                  </option>
+                ))}
+              </select>
             </Field>
 
             <Field label="Prep station (which printer)">
@@ -527,15 +564,36 @@ export default function AdminMenuPage() {
               </div>
             </div>
 
-            <label className="flex items-center gap-2 mb-5 text-sm text-[var(--ink-800)] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={draft.is_available}
-                onChange={(e) => setDraft({ ...draft, is_available: e.target.checked })}
-                className="w-4 h-4 accent-[var(--brand-600)]"
-              />
-              Available on POS
-            </label>
+            <div className="space-y-2 mb-5">
+              <label className="flex items-start gap-3 text-sm text-[var(--ink-800)] cursor-pointer p-3 rounded-xl bg-[var(--cream-100)] border border-[var(--ink-100)]">
+                <input
+                  type="checkbox"
+                  checked={draft.is_available}
+                  onChange={(e) => setDraft({ ...draft, is_available: e.target.checked })}
+                  className="w-4 h-4 accent-[var(--brand-600)] mt-0.5"
+                />
+                <span>
+                  <b>Available on menu</b> <span className="text-[var(--ink-500)]">· 上架</span>
+                  <span className="block text-xs text-[var(--ink-500)] font-normal mt-0.5">
+                    Uncheck to permanently remove this item from the POS.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 text-sm text-[var(--ink-800)] cursor-pointer p-3 rounded-xl bg-[var(--gold-300)]/25 border border-[var(--gold-400)]/40">
+                <input
+                  type="checkbox"
+                  checked={draft.temporarily_disabled}
+                  onChange={(e) => setDraft({ ...draft, temporarily_disabled: e.target.checked })}
+                  className="w-4 h-4 accent-[var(--gold-500)] mt-0.5"
+                />
+                <span>
+                  <b>Sold out today</b> <span className="text-[var(--ink-500)]">· 今日售罄</span>
+                  <span className="block text-xs text-[var(--ink-500)] font-normal mt-0.5">
+                    Temporarily hides the item from POS without deleting it. Toggle off when back in stock.
+                  </span>
+                </span>
+              </label>
+            </div>
 
             {err && <ErrorBanner>{err}</ErrorBanner>}
             </div>

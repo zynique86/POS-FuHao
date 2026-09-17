@@ -17,7 +17,8 @@ export type MenuItem = {
   image_url: string | null;
   options_available: ItemModifier[];
   category: string;
-  is_available: boolean;
+  is_available: boolean;             // owner-controlled: is this on the menu at all
+  temporarily_disabled: boolean;     // sold-out / paused for today only
   sort_order: number;
   station: PrintStation;
 };
@@ -32,9 +33,21 @@ export const STATIONS: {
   label_zh: string;
   emoji: string;
 }[] = [
-  { key: 'kitchen', label: 'Kitchen', label_zh: '廚房', emoji: '👨‍🍳' },
-  { key: 'bar',     label: 'Bar / Drinks', label_zh: '水吧', emoji: '🫖' },
+  { key: 'kitchen', label: 'Kitchen',           label_zh: '廚房', emoji: '👨‍🍳' },
+  { key: 'bar',     label: 'Bar / Drinks',      label_zh: '水吧', emoji: '🫖' },
   { key: 'cashier', label: 'Counter (Cashier)', label_zh: '收銀', emoji: '💰' },
+];
+
+// The seven menu categories per the client's spec.  Chinese labels stay
+// visible alongside the English so cooks and cashiers see both.
+export const MENU_CATEGORIES: { key: string; label: string; label_zh: string; emoji: string }[] = [
+  { key: 'Dim Sum',   label: 'Dim Sum',        label_zh: '點心', emoji: '🥟' },
+  { key: 'Buns',      label: 'Buns',           label_zh: '包點', emoji: '🫓' },
+  { key: 'Rice',      label: 'Rice',           label_zh: '飯類', emoji: '🍚' },
+  { key: 'Noodles',   label: 'Noodles / Fried',label_zh: '面 / 炒類', emoji: '🍜' },
+  { key: 'Drinks',    label: 'Drinks',         label_zh: '飲料', emoji: '🫖' },
+  { key: 'Roasted',   label: 'Roasted Meats',  label_zh: '燒味', emoji: '🍖' },
+  { key: 'Other',     label: 'Other',          label_zh: '其他', emoji: '🍽️' },
 ];
 
 export type OrderItem = {
@@ -91,6 +104,12 @@ export type Order = {
   created_at: string;
   paid_at: string | null;
   payment_method: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  voided_by: string | null;
+  refunded_at: string | null;
+  refund_reason: string | null;
+  refunded_by: string | null;
 };
 
 export type ShopSettings = {
@@ -104,7 +123,15 @@ export type ShopSettings = {
   updated_at: string;
 };
 
-export type PayMethod = 'cash' | 'duitnow_qr' | 'card';
+export type PayMethod = 'cash' | 'duitnow_qr' | 'card' | 'bank_transfer' | 'other';
+
+export const PAY_METHOD_LABELS: Record<PayMethod, { label: string; label_zh: string; emoji: string }> = {
+  cash:          { label: 'Cash',          label_zh: '現金',    emoji: '💵' },
+  duitnow_qr:    { label: 'TNG / DuitNow', label_zh: '電子錢包', emoji: '📱' },
+  card:          { label: 'Card',          label_zh: '刷卡',    emoji: '💳' },
+  bank_transfer: { label: 'Bank Transfer', label_zh: '銀行轉賬', emoji: '🏦' },
+  other:         { label: 'Other',         label_zh: '其他',    emoji: '📝' },
+};
 
 export type Payment = {
   id: number;
@@ -140,4 +167,110 @@ export type PrintJob = {
   payload: Record<string, unknown> | null;
   created_at: string;
   printed_at: string | null;
+};
+
+// -------------------------------------------------------------------------
+// STAFF + PERMISSIONS
+// -------------------------------------------------------------------------
+
+// Three tiers per the client's spec.  Route guards and UI checks map to these.
+export type StaffRole = 'cashier' | 'supervisor' | 'owner';
+
+export const ROLE_LABELS: Record<StaffRole, { label: string; label_zh: string; emoji: string }> = {
+  cashier:    { label: 'Cashier',    label_zh: '收銀員',  emoji: '💳' },
+  supervisor: { label: 'Supervisor', label_zh: '主管',    emoji: '🎖️' },
+  owner:      { label: 'Owner',      label_zh: '老闆',    emoji: '👑' },
+};
+
+export type Staff = {
+  id: number;
+  user_id: string | null;
+  name: string;
+  pin: string;
+  role: StaffRole;
+  monthly_salary: number | null;
+  active: boolean;
+  created_at: string;
+};
+
+// -------------------------------------------------------------------------
+// EXPENSES
+// -------------------------------------------------------------------------
+
+// Six kinds cover everything the client's spec asked for.  A row records the
+// actual cash going out, no attempt to attribute it to a specific dish.
+export type ExpenseKind =
+  | 'wages'
+  | 'meal'
+  | 'purchase'
+  | 'other'
+  | 'rent'
+  | 'utility';
+
+export const EXPENSE_LABELS: Record<ExpenseKind, { label: string; label_zh: string; emoji: string }> = {
+  wages:    { label: 'Staff Wages',   label_zh: '員工工資', emoji: '💰' },
+  meal:     { label: 'Staff Meal',    label_zh: '員工伙食', emoji: '🍱' },
+  purchase: { label: 'Daily Purchase',label_zh: '當日採購', emoji: '🛒' },
+  other:    { label: 'Other Expense', label_zh: '其他支出', emoji: '📝' },
+  rent:     { label: 'Rent',          label_zh: '租金',    emoji: '🏢' },
+  utility:  { label: 'Utility',       label_zh: '水電費',  emoji: '💡' },
+};
+
+export type Expense = {
+  id: number;
+  kind: ExpenseKind;
+  business_date: string;    // YYYY-MM-DD
+  amount: number;
+  payment_method: PayMethod | null;
+  description: string | null;
+  supplier: string | null;
+  receipt_url: string | null;
+  // Wages-specific
+  staff_id: number | null;
+  staff_name: string | null;
+  hours: number | null;
+  normal_wage: number | null;
+  ot_amount: number | null;
+  other_amount: number | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+// -------------------------------------------------------------------------
+// AUDIT LOG
+// -------------------------------------------------------------------------
+
+export type AuditAction =
+  | 'void'
+  | 'refund'
+  | 'discount'
+  | 'price_change'
+  | 'expense_delete'
+  | 'menu_item_delete'
+  | 'staff_role_change'
+  | 'staff_delete';
+
+export const AUDIT_ACTION_LABELS: Record<AuditAction, { label: string; label_zh: string; emoji: string }> = {
+  void:              { label: 'Void',           label_zh: '取消訂單', emoji: '❌' },
+  refund:            { label: 'Refund',         label_zh: '退款',    emoji: '↩️' },
+  discount:          { label: 'Discount',       label_zh: '折扣',    emoji: '🏷️' },
+  price_change:      { label: 'Price Change',   label_zh: '改價格',  emoji: '💲' },
+  expense_delete:    { label: 'Delete Expense', label_zh: '刪除支出', emoji: '🗑️' },
+  menu_item_delete:  { label: 'Delete Menu',    label_zh: '刪除菜品', emoji: '🗑️' },
+  staff_role_change: { label: 'Change Role',    label_zh: '改權限',   emoji: '🎖️' },
+  staff_delete:      { label: 'Delete Staff',   label_zh: '刪除員工', emoji: '🗑️' },
+};
+
+export type AuditLog = {
+  id: number;
+  actor_email: string | null;
+  actor_role: StaffRole | null;
+  action: AuditAction;
+  target_type: string | null;
+  target_id: number | null;
+  amount: number | null;
+  reason: string | null;
+  details: Record<string, unknown> | null;
+  created_at: string;
 };

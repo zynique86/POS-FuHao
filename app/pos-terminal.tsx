@@ -126,13 +126,17 @@ export default function POSTerminal({
   const visibleItems = useMemo(
     () =>
       items
-        .filter((i) => i.is_available !== false)
+        // Hide items that the owner marked "off menu" (is_available = false)
+        // or that the shop toggled "sold out today" (temporarily_disabled = true).
+        .filter((i) => i.is_available !== false && i.temporarily_disabled !== true)
         .filter((i) => stationFilter === 'all' || i.station === stationFilter),
     [items, stationFilter]
   );
 
   const stationCounts = useMemo(() => {
-    const available = items.filter((i) => i.is_available !== false);
+    const available = items.filter(
+      (i) => i.is_available !== false && i.temporarily_disabled !== true
+    );
     return {
       all: available.length,
       kitchen: available.filter((i) => i.station === 'kitchen').length,
