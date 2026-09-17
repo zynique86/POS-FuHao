@@ -346,8 +346,8 @@ export default function POSTerminal({
     <main className="min-h-[calc(100vh-56px)] max-w-[1600px] mx-auto px-4 md:px-6 py-6">
       <PageHeader tableNo={tableNo} onTable={(n) => { setTableNo(n); setCart([]); setFlash(null); }} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6 mt-6">
-        <section>
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_400px] gap-6 mt-6">
+        <section className="min-w-0">
           {/* Sticky filter bar.  Two visual tiers so waiters know which
               control they use most:
                 1. Category chips = primary (bigger, coloured accent)
@@ -355,11 +355,11 @@ export default function POSTerminal({
           <div className="sticky top-14 z-10 -mx-4 md:-mx-6 px-4 md:px-6 py-3 bg-[var(--cream-50)]/90 backdrop-blur border-b border-[var(--ink-200)] mb-6">
 
             {/* Row 1 — Category filter (primary) */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <span className="hidden md:inline text-[10px] uppercase tracking-widest text-[var(--ink-500)] font-bold shrink-0">
                 Category · 分類
               </span>
-              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar flex-1">
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar flex-1 min-w-0">
                 <FilterChip
                   active={categoryFilter === 'all'}
                   onClick={() => setCategoryFilter('all')}
@@ -392,11 +392,11 @@ export default function POSTerminal({
             </div>
 
             {/* Row 2 — Station filter (secondary, subtler) */}
-            <div className="flex items-center gap-3 mt-2 pt-2 border-t border-[var(--ink-100)]">
+            <div className="flex items-center gap-3 mt-2 pt-2 border-t border-[var(--ink-100)] min-w-0">
               <span className="text-[10px] uppercase tracking-widest text-[var(--ink-500)] font-bold shrink-0">
                 Station · 站
               </span>
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1 no-scrollbar flex-1">
+              <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1 no-scrollbar flex-1 min-w-0">
                 <FilterChip active={stationFilter === 'all'}     onClick={() => setStationFilter('all')}     count={stationCounts.all}     variant="secondary">All</FilterChip>
                 <FilterChip active={stationFilter === 'kitchen'} onClick={() => setStationFilter('kitchen')} count={stationCounts.kitchen} variant="secondary">👨‍🍳 Kitchen</FilterChip>
                 <FilterChip active={stationFilter === 'bar'}     onClick={() => setStationFilter('bar')}     count={stationCounts.bar}     variant="secondary">🫖 Bar</FilterChip>
