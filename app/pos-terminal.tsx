@@ -10,7 +10,7 @@ import { computeBreakdown, sumLines } from '@/lib/pricing';
 import { useSettings } from '@/lib/use-settings';
 import { ModalShell, PrimaryBtn, SecondaryBtn } from '@/components/ui';
 import { getCurrentUser } from '@/lib/roles';
-import type { MenuItem, ShopSettings } from '@/lib/types';
+import { MENU_CATEGORIES, type MenuItem, type ShopSettings } from '@/lib/types';
 
 type CartLine = {
   key: string;         // unique per line (so two lines of same item stay distinct)
@@ -46,6 +46,9 @@ export default function POSTerminal({
   const [existing, setExisting] = useState<ExistingOrder | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [stationFilter, setStationFilter] = useState<'all' | 'kitchen' | 'bar'>('all');
+  // Category filter for faster ordering — 'all' shows every category.
+  // Any other value must match a MenuItem.category key exactly.
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [sending, setSending] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [optionsFor, setOptionsFor] = useState<MenuItem | null>(null);
@@ -123,15 +126,16 @@ export default function POSTerminal({
     };
   }, [tableNo]);
 
-  // Items visible after station filter — grouped by category for display.
+  // Items visible after station + category filters — grouped for display.
   const visibleItems = useMemo(
     () =>
       items
         // Hide items that the owner marked "off menu" (is_available = false)
         // or that the shop toggled "sold out today" (temporarily_disabled = true).
         .filter((i) => i.is_available !== false && i.temporarily_disabled !== true)
-        .filter((i) => stationFilter === 'all' || i.station === stationFilter),
-    [items, stationFilter]
+        .filter((i) => stationFilter === 'all' || i.station === stationFilter)
+        .filter((i) => categoryFilter === 'all' || (i.category || 'Other') === categoryFilter),
+    [items, stationFilter, categoryFilter]
   );
 
   const stationCounts = useMemo(() => {
@@ -145,6 +149,24 @@ export default function POSTerminal({
     };
   }, [items]);
 
+  // Per-category counts — one number under each category chip.  Reflects
+  // the current station filter so counts stay honest when you switch stations.
+  const categoryCounts = useMemo(() => {
+    const available = items.filter(
+      (i) =>
+        i.is_available !== false &&
+        i.temporarily_disabled !== true &&
+        (stationFilter === 'all' || i.station === stationFilter)
+    );
+    const counts: Record<string, number> = { all: available.length };
+    for (const c of MENU_CATEGORIES) counts[c.key] = 0;
+    for (const it of available) {
+      const k = it.category || 'Other';
+      counts[k] = (counts[k] || 0) + 1;
+    }
+    return counts;
+  }, [items, stationFilter]);
+
   const grouped = useMemo(() => {
     const m = new Map<string, MenuItem[]>();
     for (const i of visibleItems) {
@@ -152,8 +174,17 @@ export default function POSTerminal({
       if (!m.has(c)) m.set(c, []);
       m.get(c)!.push(i);
     }
-    // Keep sort_order + id ordering within each group.
-    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
+    // Sort sections in the seven-category order defined in lib/types
+    // (Dim Sum first, Other last), then any unrecognised keys.
+    const order = MENU_CATEGORIES.map((c) => c.key);
+    return [...m.entries()].sort(([a], [b]) => {
+      const ia = order.indexOf(a);
+      const ib = order.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.localeCompare(b);
+    });
   }, [visibleItems]);
 
   // Lookup map used by the cart to render thumbnails for existing (sent)
@@ -317,8 +348,35 @@ export default function POSTerminal({
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6 mt-6">
         <section>
-          {/* Station filter — mirrors the /restock page layout */}
-          <div className="sticky top-14 z-10 -mx-4 md:-mx-6 px-4 md:px-6 py-3 bg-[var(--cream-50)]/85 backdrop-blur border-b border-[var(--ink-200)] mb-6">
+          {/* Filters — category chips (primary) + station chips (secondary) */}
+          <div className="sticky top-14 z-10 -mx-4 md:-mx-6 px-4 md:px-6 py-3 bg-[var(--cream-50)]/85 backdrop-blur border-b border-[var(--ink-200)] mb-6 space-y-2">
+
+            {/* Category filter — the fast way to find a dish */}
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
+              <StationPill
+                active={categoryFilter === 'all'}
+                onClick={() => setCategoryFilter('all')}
+                count={categoryCounts.all ?? 0}
+              >
+                All · 全部
+              </StationPill>
+              {MENU_CATEGORIES.map((c) => {
+                const n = categoryCounts[c.key] ?? 0;
+                if (n === 0 && categoryFilter !== c.key) return null;
+                return (
+                  <StationPill
+                    key={c.key}
+                    active={categoryFilter === c.key}
+                    onClick={() => setCategoryFilter(c.key)}
+                    count={n}
+                  >
+                    {c.emoji} {c.label} · {c.label_zh}
+                  </StationPill>
+                );
+              })}
+            </div>
+
+            {/* Station filter — kept as a smaller secondary control */}
             <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
               <StationPill active={stationFilter === 'all'} onClick={() => setStationFilter('all')} count={stationCounts.all}>
                 All
@@ -332,16 +390,28 @@ export default function POSTerminal({
             </div>
           </div>
 
-          {/* Categories as sections, items in a grid per section */}
+          {/* Categories as sections, items in a grid per section.  When
+              a single category is filtered we skip the section header
+              since the filter chip above already names it. */}
           <div className="space-y-6">
-            {grouped.map(([category, list]) => (
+            {grouped.map(([category, list]) => {
+              const meta = MENU_CATEGORIES.find((c) => c.key === category);
+              return (
               <section key={category}>
-                <h2 className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold mb-3">
-                  {category}
-                  <span className="ml-2 text-[var(--ink-400)] font-normal font-mono">
-                    {list.length}
-                  </span>
-                </h2>
+                {categoryFilter === 'all' && (
+                  <h2 className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold mb-3 flex items-baseline gap-2">
+                    {meta && <span className="text-base">{meta.emoji}</span>}
+                    <span>{meta ? meta.label : category}</span>
+                    {meta && (
+                      <span className="text-[var(--ink-400)] font-normal normal-case tracking-normal">
+                        · {meta.label_zh}
+                      </span>
+                    )}
+                    <span className="ml-1 text-[var(--ink-400)] font-normal font-mono">
+                      {list.length}
+                    </span>
+                  </h2>
+                )}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                   {list.map((item) => (
                     <MenuButton
@@ -352,7 +422,8 @@ export default function POSTerminal({
                   ))}
                 </div>
               </section>
-            ))}
+              );
+            })}
 
             {grouped.length === 0 && (
               <div className="py-16 text-center">
