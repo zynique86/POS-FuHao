@@ -4,23 +4,23 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { fetchSettings } from '@/lib/settings';
+import { getCurrentUser, clearRoleCache, type CurrentUser } from '@/lib/roles';
 
-// Wraps every page. Enforces sign-in and paints the global top nav.
-// The /login route is a passthrough — no nav, no session gate.
+// Wraps every page.  Enforces sign-in, applies role-based redirects, and
+// paints the global top nav.  The /login route is a passthrough — no nav,
+// no session gate.
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const isLoginRoute = pathname === '/login';
 
   const [checked, setChecked] = useState(false);
-  const [email, setEmail] = useState<string | null>(null);
+  const [me, setMe] = useState<CurrentUser | null>(null);
   const [shop, setShop] = useState<{ name: string; nameZh: string }>({
     name: 'Dim Sum POS',
     nameZh: '點心 · Point of Sale',
   });
 
-  // Shop name lives in shop_settings — pull it in and keep it fresh so the
-  // top nav reflects what the manager set in Admin → Settings, live.
   useEffect(() => {
     if (isLoginRoute) return;
     let cancelled = false;
@@ -54,32 +54,37 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       return;
     }
     let cancelled = false;
-    supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        if (cancelled) return;
-        if (!data.session) {
-          router.replace('/login');
-          return;
-        }
-        setEmail(data.session.user.email ?? null);
-        setChecked(true);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error('Auth check failed:', err);
+
+    async function refresh() {
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (!data.session) {
         router.replace('/login');
-      });
+        return;
+      }
+      clearRoleCache();
+      const u = await getCurrentUser(true);
+      if (cancelled) return;
+      setMe(u);
+      setChecked(true);
+
+      // Route guard: staff can't visit any admin page.
+      if (u.role !== 'admin' && pathname?.startsWith('/admin')) {
+        router.replace('/');
+      }
+    }
+
+    refresh();
 
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       if (!session) router.replace('/login');
-      else setEmail(session.user.email ?? null);
+      else refresh();
     });
     return () => {
       cancelled = true;
       sub.subscription.unsubscribe();
     };
-  }, [isLoginRoute, router]);
+  }, [isLoginRoute, router, pathname]);
 
   if (!checked) {
     return (
@@ -94,7 +99,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (isLoginRoute) return <>{children}</>;
 
-  const initial = (email ?? 'S').trim()[0]?.toUpperCase() ?? 'S';
+  const initial = (me?.name ?? me?.email ?? 'S').trim()[0]?.toUpperCase() ?? 'S';
+  const isAdmin = me?.role === 'admin';
 
   return (
     <>
@@ -128,23 +134,37 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             <NavLink href="/bar"     active={pathname === '/bar'}                     label="Bar" />
             <NavLink href="/restock" active={pathname === '/restock'}                 label="Restock" />
             <NavLink href="/cashier" active={pathname === '/cashier'}                 label="Cashier" />
-            <NavLink href="/admin"   active={pathname?.startsWith('/admin') ?? false} label="Admin" />
+            {isAdmin && (
+              <NavLink href="/admin" active={pathname?.startsWith('/admin') ?? false} label="Admin" />
+            )}
           </nav>
 
           <div className="flex items-center gap-2 shrink-0">
+            {me?.name && (
+              <span className="hidden md:flex flex-col leading-tight text-right">
+                <span className="text-xs font-bold text-[var(--ink-900)] truncate max-w-[140px]">
+                  {me.name}
+                </span>
+                <span className="text-[10px] uppercase tracking-[0.15em] text-[var(--ink-500)]">
+                  {isAdmin ? '👑 Admin' : '👤 Staff'}
+                </span>
+              </span>
+            )}
             <span
               className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
               style={{
-                background:
-                  'linear-gradient(135deg, var(--brand-500), var(--brand-700))',
+                background: isAdmin
+                  ? 'linear-gradient(135deg, var(--brand-500), var(--brand-700))'
+                  : 'linear-gradient(135deg, var(--ink-500), var(--ink-700))',
               }}
-              title={email ?? ''}
+              title={me?.email ?? ''}
             >
               {initial}
             </span>
             <button
               onClick={async () => {
                 await supabase.auth.signOut();
+                clearRoleCache();
                 router.replace('/login');
               }}
               className="text-xs text-[var(--ink-500)] hover:text-[var(--brand-600)] font-medium hidden md:block"

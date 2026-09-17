@@ -110,6 +110,10 @@ export type Order = {
   refunded_at: string | null;
   refund_reason: string | null;
   refunded_by: string | null;
+  // Who sent the order from the POS.  Recorded at insert time so the
+  // Kitchen, Bar and Cashier screens can show it.
+  taken_by_email: string | null;
+  taken_by_name: string | null;
 };
 
 export type ShopSettings = {
@@ -173,24 +177,14 @@ export type PrintJob = {
 // STAFF + PERMISSIONS
 // -------------------------------------------------------------------------
 
-// Three tiers per the client's spec.  Route guards and UI checks map to these.
-export type StaffRole = 'cashier' | 'supervisor' | 'owner';
+// Two roles, stored in each Supabase user's user_metadata.
+//   staff  → everything except /admin/*
+//   admin  → everything
+export type StaffRole = 'staff' | 'admin';
 
 export const ROLE_LABELS: Record<StaffRole, { label: string; label_zh: string; emoji: string }> = {
-  cashier:    { label: 'Cashier',    label_zh: '收銀員',  emoji: '💳' },
-  supervisor: { label: 'Supervisor', label_zh: '主管',    emoji: '🎖️' },
-  owner:      { label: 'Owner',      label_zh: '老闆',    emoji: '👑' },
-};
-
-export type Staff = {
-  id: number;
-  user_id: string | null;
-  name: string;
-  pin: string;
-  role: StaffRole;
-  monthly_salary: number | null;
-  active: boolean;
-  created_at: string;
+  staff: { label: 'Staff', label_zh: '員工', emoji: '👤' },
+  admin: { label: 'Admin', label_zh: '老闆', emoji: '👑' },
 };
 
 // -------------------------------------------------------------------------

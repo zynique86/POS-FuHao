@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { computeBreakdown, sumLines } from '@/lib/pricing';
 import { useSettings } from '@/lib/use-settings';
 import { ModalShell, PrimaryBtn, SecondaryBtn } from '@/components/ui';
+import { getCurrentUser } from '@/lib/roles';
 import type { MenuItem, ShopSettings } from '@/lib/types';
 
 type CartLine = {
@@ -220,6 +221,9 @@ export default function POSTerminal({
         orderId = existing.id;
       } else {
         const init = computeBreakdown(newSub, settings);
+        // Record which signed-in user is sending the order so Kitchen,
+        // Bar and Cashier screens can display who took it.
+        const me = await getCurrentUser();
         const { data: order, error: orderErr } = await supabase
           .from('orders')
           .insert({
@@ -230,6 +234,8 @@ export default function POSTerminal({
             rounding: init.rounding,
             total: init.total,
             status: 'open',
+            taken_by_email: me.email,
+            taken_by_name: me.name,
           })
           .select()
           .single();

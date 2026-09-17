@@ -14,6 +14,7 @@ type OrderRow = {
   table_number: number;
   status: string;
   created_at: string;
+  taken_by_name: string | null;
 };
 type OrderWithItems = OrderRow & { items: OrderItem[] };
 
@@ -65,7 +66,7 @@ export default function StationDisplay({
     async function load() {
       const { data: orderRows } = await supabase
         .from('orders')
-        .select('id, table_number, status, created_at')
+        .select('id, table_number, status, created_at, taken_by_name')
         .eq('status', 'open')
         .order('created_at', { ascending: true });
       if (!orderRows) return;
@@ -313,6 +314,11 @@ export default function StationDisplay({
                   <div>
                     <p className="text-[10px] uppercase tracking-widest text-white/60">Table</p>
                     <p className="text-2xl font-bold">{order.table_number}</p>
+                    {order.taken_by_name && (
+                      <p className="text-[10px] text-white/70 mt-0.5">
+                        by <b className="text-white/90">{order.taken_by_name}</b>
+                      </p>
+                    )}
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] font-mono text-white/60">#{order.id}</p>

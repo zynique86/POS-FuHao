@@ -690,9 +690,14 @@ function UnpaidCard({ order, onOpen }: { order: Order; onOpen: () => void }) {
         </div>
         <span className="text-[10px] text-[var(--ink-400)] font-mono">#{order.id}</span>
       </div>
-      <p className="text-xs text-[var(--ink-500)] mb-3">
+      <p className="text-xs text-[var(--ink-500)] mb-1">
         {active.length} item{active.length === 1 ? '' : 's'}
       </p>
+      {order.taken_by_name && (
+        <p className="text-[11px] text-[var(--ink-500)] mb-3">
+          Taken by <b className="text-[var(--ink-800)]">{order.taken_by_name}</b>
+        </p>
+      )}
       <div className="flex items-baseline gap-3 border-t border-[var(--ink-100)] pt-3">
         <span className="text-sm text-[var(--ink-500)] flex-1">
           {partial ? 'Remaining' : 'Total'}
