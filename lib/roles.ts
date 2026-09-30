@@ -72,12 +72,12 @@ export type Capability =
   | 'view_pos' | 'view_kitchen' | 'view_bar' | 'view_cashier'
   | 'view_admin' | 'view_reports' | 'view_profit'
   | 'edit_menu' | 'edit_expenses' | 'edit_settings'
-  | 'void' | 'refund' | 'discount' | 'change_price' | 'view_audit';
+  | 'void' | 'refund' | 'discount' | 'change_price';
 
 const ADMIN_ONLY: Capability[] = [
   'view_admin', 'view_reports', 'view_profit',
   'edit_menu', 'edit_expenses', 'edit_settings',
-  'change_price', 'view_audit',
+  'change_price',
 ];
 
 export function can(role: StaffRole, capability: Capability): boolean {

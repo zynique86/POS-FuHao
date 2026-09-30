@@ -315,7 +315,7 @@ export default function AdminMenuPage() {
           onClick={() => !saving && setDraft(null)}
         >
           <div
-            className="bg-white rounded-3xl max-w-md w-full flex flex-col max-h-[95vh] animate-rise"
+            className="bg-white rounded-3xl max-w-md w-full flex flex-col max-h-[95vh] animate-rise overflow-hidden"
             onClick={(e) => e.stopPropagation()}
             style={{ boxShadow: 'var(--shadow-lg)' }}
           >
@@ -327,7 +327,7 @@ export default function AdminMenuPage() {
             </div>
 
             {/* Scrollable body */}
-            <div className="flex-1 overflow-y-auto px-6 py-4">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 px-6 py-4">
 
             {/* Image uploader */}
             <div className="mb-4">
@@ -490,24 +490,26 @@ export default function AdminMenuPage() {
             </Field>
 
             {/* Per-item modifiers */}
-            <div className="mb-4">
+            <div className="mb-4 min-w-0">
               <span className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-2 font-semibold">
                 Modifiers for this item
               </span>
 
               {/* Current list */}
               {draft.options_available.length > 0 ? (
-                <div className="flex flex-wrap gap-2 mb-3">
+                <div className="flex flex-wrap gap-2 mb-3 min-w-0">
                   {draft.options_available.map((mod, idx) => (
                     <span
                       key={idx}
-                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold text-white"
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold text-white max-w-full"
                       style={{
                         background: 'linear-gradient(135deg, var(--gold-500), var(--brand-600))',
                       }}
                     >
-                      {mod.label}
-                      {mod.label_zh && <span> · {mod.label_zh}</span>}
+                      <span className="min-w-0 break-words">
+                        {mod.label}
+                        {mod.label_zh && <span className="opacity-90"> · {mod.label_zh}</span>}
+                      </span>
                       <button
                         type="button"
                         onClick={() =>
@@ -516,7 +518,7 @@ export default function AdminMenuPage() {
                             options_available: draft.options_available.filter((_, i) => i !== idx),
                           })
                         }
-                        className="w-4 h-4 rounded-full bg-white/20 hover:bg-white/40 text-white text-[10px] flex items-center justify-center"
+                        className="w-4 h-4 rounded-full bg-white/20 hover:bg-white/40 text-white text-[10px] flex items-center justify-center shrink-0"
                         aria-label="Remove modifier"
                       >
                         ✕
@@ -542,7 +544,7 @@ export default function AdminMenuPage() {
               <p className="text-[10px] uppercase tracking-widest text-[var(--ink-400)] font-semibold mt-3 mb-2">
                 Suggestions — tap to add
               </p>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1.5 min-w-0">
                 {SUGGESTED_MODIFIERS.filter(
                   (s) => !draft.options_available.some((x) => x.label === s.label)
                 ).map((s, idx) => (
@@ -555,7 +557,7 @@ export default function AdminMenuPage() {
                         options_available: [...draft.options_available, s],
                       })
                     }
-                    className="text-[10px] px-2.5 py-1 rounded-full bg-[var(--cream-100)] text-[var(--ink-700)] border border-[var(--ink-200)] hover:border-[var(--brand-400)]"
+                    className="text-[10px] px-2.5 py-1 rounded-full bg-[var(--cream-100)] text-[var(--ink-700)] border border-[var(--ink-200)] hover:border-[var(--brand-400)] max-w-full break-words text-left"
                   >
                     + {s.label}
                     {s.label_zh && <span className="text-[var(--ink-400)]"> · {s.label_zh}</span>}
@@ -616,7 +618,7 @@ export default function AdminMenuPage() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block mb-3">
+    <label className="block mb-3 min-w-0">
       <span className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-1.5 font-semibold">
         {label}
       </span>
@@ -639,20 +641,20 @@ function ModifierAdder({ onAdd }: { onAdd: (m: ItemModifier) => void }) {
   }
 
   return (
-    <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 min-w-0">
       <input
         value={en}
         onChange={(e) => setEn(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), submit())}
         placeholder="English"
-        className="px-3 py-2 border border-[var(--ink-200)] rounded-lg text-sm focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+        className="min-w-0 w-full px-3 py-2 border border-[var(--ink-200)] rounded-lg text-sm focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
       />
       <input
         value={zh}
         onChange={(e) => setZh(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), submit())}
         placeholder="中文 (optional)"
-        className="px-3 py-2 border border-[var(--ink-200)] rounded-lg text-sm focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+        className="min-w-0 w-full px-3 py-2 border border-[var(--ink-200)] rounded-lg text-sm focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
       />
       <button
         type="button"

@@ -11,8 +11,6 @@ import {
   todayISODate,
   type Shift,
 } from '@/lib/shifts';
-import { logAudit } from '@/lib/expenses';
-import { getCurrentUser } from '@/lib/roles';
 import type { Order as BaseOrder, OrderItem, Payment, PayMethod } from '@/lib/types';
 
 type Order = BaseOrder & { items: OrderItem[]; payments: Payment[] };
@@ -544,7 +542,7 @@ function RefundModal({
   const [err, setErr] = useState<string | null>(null);
 
   async function confirm() {
-    if (!reason.trim()) return setErr('Reason is required for the audit trail');
+    if (!reason.trim()) return setErr('Reason is required');
     setBusy(true);
     try {
       const { data: userRes } = await supabase.auth.getUser();
@@ -581,19 +579,6 @@ function RefundModal({
         payload: { reason: reason.trim(), by, amount },
       });
 
-      // Audit trail
-      const me = await getCurrentUser();
-      await logAudit({
-        actor_email: me.email,
-        actor_role: me.role,
-        action: 'refund',
-        target_type: 'order',
-        target_id: order.id,
-        amount,
-        reason: reason.trim(),
-        details: { table: order.table_number, method: order.payment_method ?? 'cash' },
-      });
-
       onDone();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message
@@ -619,7 +604,7 @@ function RefundModal({
         </p>
       </div>
 
-      <F label="Reason (kept for the audit)">
+      <F label="Reason">
         <input
           value={reason}
           onChange={(e) => setReason(e.target.value)}
@@ -1193,23 +1178,6 @@ function VoidModal({
       payload: { item_id: itemId, reason: reason || 'no reason given' },
     });
 
-    // Audit trail — owner can review every void with who / when / why.
-    const me = await getCurrentUser();
-    await logAudit({
-      actor_email: me.email,
-      actor_role: me.role,
-      action: 'void',
-      target_type: 'order_item',
-      target_id: itemId,
-      amount: Number(item?.price_at_time ?? 0) * Number(item?.qty ?? 0),
-      reason: reason || 'no reason given',
-      details: {
-        order_id: order.id,
-        table: order.table_number,
-        item_name: item?.name_snapshot,
-      },
-    });
-
     setBusy(false);
     onDone();
   }
@@ -1300,19 +1268,6 @@ function DiscountModal({
         })
         .eq('id', order.id);
       if (error) throw error;
-
-      // Audit trail — every discount (or discount cleared) is recorded.
-      const me = await getCurrentUser();
-      await logAudit({
-        actor_email: me.email,
-        actor_role: me.role,
-        action: 'discount',
-        target_type: 'order',
-        target_id: order.id,
-        amount: Math.round(d * 100) / 100,
-        reason: clear ? 'Discount cleared' : (reason.trim() || 'No reason given'),
-        details: { table: order.table_number, new_total: finalTotal },
-      });
 
       onDone();
     } catch (e: unknown) {
