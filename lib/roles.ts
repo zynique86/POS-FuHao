@@ -20,8 +20,9 @@ import type { StaffRole } from './types';
 
 const ADMIN_EMAILS = [
   'ezjiet@gmail.com',
-  // add more admins here, one per line, in single quotes with a trailing comma:
-  // 'partner@fuhao.com',
+  'poyee4963@gmail.com',
+  'rickytan5791@gmail.com',
+  'tan523567@gmail.com'
 ] as const;
 
 // -------------------------------------------------------------------------

@@ -12,6 +12,39 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const { ThermalPrinter, PrinterTypes } = require('node-thermal-printer');
+const iconv = require('iconv-lite');
+
+// -------------------------------------------------------------------------
+// Chinese-safe printing
+//
+// Thermal printers can't render UTF-8 Chinese out of the box.  They need
+// two things: (1) the Kanji-mode ESC/POS command switched on, and (2) the
+// text encoded in GB18030 (national standard, covers Simplified and
+// Traditional).  Once we send `FS &` and GB18030 bytes, the printer renders
+// the characters correctly.  After each line we send `FS .` to go back to
+// ASCII mode so English lines print normally.
+// -------------------------------------------------------------------------
+const CJK_REGEX = /[㐀-鿿豈-﫿]/;
+const FS_AND    = Buffer.from([0x1C, 0x26]);  // enter Kanji mode
+const FS_DOT    = Buffer.from([0x1C, 0x2E]);  // exit Kanji mode
+const LF        = Buffer.from([0x0A]);
+
+/**
+ * Print a line that may contain Chinese/CJK characters.
+ * Falls back to normal `println` if the text is ASCII-only.
+ */
+function say(printer, text) {
+  if (text == null || text === '') { printer.newLine(); return; }
+  const s = String(text);
+  if (!CJK_REGEX.test(s)) {
+    printer.println(s);
+    return;
+  }
+  printer.raw(FS_AND);
+  printer.raw(iconv.encode(s, 'gb18030'));
+  printer.raw(FS_DOT);
+  printer.raw(LF);
+}
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -81,6 +114,7 @@ async function processJob(job) {
     const station = job.station || 'kitchen';
     if (job.kind === 'kitchen') await handleKitchen(job, station);
     else if (job.kind === 'receipt') await handleReceipt(job, station);
+    else if (job.kind === 'order_summary') await handleOrderSummary(job, station);
     else if (job.kind === 'void') await handleVoid(job, station);
     else if (job.kind === 'refund') await handleRefund(job, station);
     else if (job.kind === 'restock') await handleRestock(job, station);
@@ -129,7 +163,7 @@ async function handleKitchen(job, station) {
   printer.alignCenter();
   printer.bold(true);
   printer.setTextSize(1, 1);
-  printer.println(stationName);
+  say(printer, stationName);
   printer.setTextNormal();
   printer.bold(false);
   printer.println(`TABLE ${order.table_number}`);
@@ -138,20 +172,117 @@ async function handleKitchen(job, station) {
   printer.drawLine();
   printer.alignLeft();
   items.forEach((i) => {
+    // [ ] tick box in front of each item so the cook marks it as done.
     printer.bold(true);
-    printer.println(`${i.qty}x  ${i.name_snapshot}`);
+    say(printer, `[ ] ${i.qty}x  ${i.name_snapshot}`);
     printer.bold(false);
-    if (i.name_zh_snapshot) printer.println(`     ${i.name_zh_snapshot}`);
+    if (i.name_zh_snapshot) say(printer, `       ${i.name_zh_snapshot}`);
     if (i.options) {
-      printer.println(`     ► ${i.options}`);
+      say(printer, `       > ${i.options}`);
     }
     if (i.note) {
-      printer.println(`     ► NOTE: ${i.note}`);
+      say(printer, `       > NOTE: ${i.note}`);
     }
   });
+  printer.drawLine();
+  // Big "ALL DONE" box at the bottom — cook ticks when the whole order
+  // is plated and ready for the runner to pick up.
+  printer.alignCenter();
+  printer.bold(true);
+  printer.setTextSize(1, 1);
+  say(printer, '[  ]  ALL DONE  完成');
+  printer.setTextNormal();
+  printer.bold(false);
+  printer.newLine();
+  printer.newLine();
   printer.cut();
   await printer.execute();
   console.log(`🖨️  ${station} ticket printed for order #${order.id} (${items.length} items)`);
+}
+
+// --- ORDER SUMMARY (customer copy sent to cashier printer) -----------------
+//
+// Printed at the moment an order is sent to the kitchen so the customer
+// can see what they ordered.  Includes items with prices and a running
+// subtotal — no tax, no payment method, no "thank you".  It's a preview,
+// not a final receipt.
+async function handleOrderSummary(job, station) {
+  const itemIds = job.payload?.item_ids ?? [];
+  if (!job.order_id || itemIds.length === 0) return;
+
+  const [{ data: order }, { data: items }] = await Promise.all([
+    supabase.from('orders').select('*').eq('id', job.order_id).single(),
+    supabase.from('order_items').select('*').in('id', itemIds).order('id'),
+  ]);
+  if (!order || !items || items.length === 0) return;
+
+  const when = new Date().toLocaleString('en-MY');
+  const runningSubtotal = items.reduce(
+    (s, i) => s + Number(i.price_at_time) * Number(i.qty), 0
+  );
+
+  const lines = [
+    `${settings.shop_name}`,
+    `Table ${order.table_number} · Order #${order.id}`,
+    `${when}`,
+    '',
+    '*** ORDER SUMMARY / 訂單概覽 ***',
+    '',
+    ...items.flatMap((i) => {
+      const t = Number(i.price_at_time) * Number(i.qty);
+      const rows = [`${i.qty}x ${i.name_snapshot}  RM ${t.toFixed(2)}`];
+      if (i.name_zh_snapshot) rows.push(`   ${i.name_zh_snapshot}`);
+      return rows;
+    }),
+    '',
+    `Subtotal (so far):   RM ${runningSubtotal.toFixed(2)}`,
+    '',
+    '(This is a preview — final bill at cashier)',
+  ];
+
+  const printer = printerFor(station);
+  if (!printer) return consoleFallback(station, 'order_summary', lines);
+
+  printer.alignCenter();
+  printer.bold(true);
+  say(printer, settings.shop_name);
+  printer.bold(false);
+  if (settings.shop_name_zh) say(printer, settings.shop_name_zh);
+  printer.println(`Table ${order.table_number} - Order #${order.id}`);
+  printer.println(when);
+  printer.drawLine();
+  printer.bold(true);
+  say(printer, '*** ORDER SUMMARY / 訂單概覽 ***');
+  printer.bold(false);
+  printer.drawLine();
+
+  printer.alignLeft();
+  items.forEach((i) => {
+    const lineTotal = Number(i.price_at_time) * Number(i.qty);
+    printer.tableCustom([
+      { text: `${i.qty}x ${i.name_snapshot}`, width: 0.7 },
+      { text: `RM ${lineTotal.toFixed(2)}`, width: 0.3, align: 'RIGHT' },
+    ]);
+    if (i.name_zh_snapshot) say(printer, `   ${i.name_zh_snapshot}`);
+    if (i.options) say(printer, `   > ${i.options}`);
+    if (i.note)    say(printer, `   > ${i.note}`);
+  });
+
+  printer.drawLine();
+  printer.bold(true);
+  row(printer, 'Subtotal (so far)', runningSubtotal);
+  printer.bold(false);
+  printer.drawLine();
+
+  printer.alignCenter();
+  say(printer, 'This is a preview — final bill at cashier');
+  say(printer, '這只是預覽 — 賬單以收銀為準');
+  printer.newLine();
+  printer.newLine();
+  printer.cut();
+
+  await printer.execute();
+  console.log(`📋 Order summary printed for order #${order.id} at ${station}`);
 }
 
 // --- CUSTOMER RECEIPT ------------------------------------------------------
@@ -208,11 +339,11 @@ async function handleReceipt(job, station) {
 
   printer.alignCenter();
   printer.bold(true);
-  printer.println(settings.shop_name);
+  say(printer, settings.shop_name);
   printer.bold(false);
-  if (settings.shop_name_zh) printer.println(settings.shop_name_zh);
-  settings.address.split('\n').filter(Boolean).forEach((l) => printer.println(l));
-  printer.println(`Table ${order.table_number} — Order #${order.id}`);
+  if (settings.shop_name_zh) say(printer, settings.shop_name_zh);
+  settings.address.split('\n').filter(Boolean).forEach((l) => say(printer, l));
+  printer.println(`Table ${order.table_number} - Order #${order.id}`);
   printer.println(when);
   if (isReprint) {
     printer.bold(true);
@@ -223,13 +354,14 @@ async function handleReceipt(job, station) {
   printer.alignLeft();
   items.forEach((i) => {
     const lineTotal = Number(i.price_at_time) * i.qty;
+    // The tableCustom columns are ASCII-only (qty + English + price).
     printer.tableCustom([
       { text: `${i.qty}x ${i.name_snapshot}`, width: 0.7 },
       { text: `RM ${lineTotal.toFixed(2)}`, width: 0.3, align: 'RIGHT' },
     ]);
-    if (i.name_zh_snapshot) printer.println(`   ${i.name_zh_snapshot}`);
-    if (i.options) printer.println(`   ► ${i.options}`);
-    if (i.note) printer.println(`   ► ${i.note}`);
+    if (i.name_zh_snapshot) say(printer, `   ${i.name_zh_snapshot}`);
+    if (i.options) say(printer, `   > ${i.options}`);
+    if (i.note)    say(printer, `   > ${i.note}`);
   });
   printer.drawLine();
   row(printer, 'Subtotal', subtotal);
@@ -245,7 +377,9 @@ async function handleReceipt(job, station) {
   printer.println(`Method: ${order.payment_method || 'cash'}`);
   printer.drawLine();
   printer.alignCenter();
-  printer.println('Thank you — 多謝');
+  say(printer, 'Thank you - 多謝');
+  printer.newLine();
+  printer.newLine();
   printer.cut();
   await printer.execute();
   console.log(`🖨️  Receipt printed for order #${order.id}${isReprint ? ' (reprint)' : ''}`);
@@ -284,9 +418,11 @@ async function handleVoid(job, station) {
   printer.println(time);
   printer.println(`Order #${item.order_id}`);
   printer.drawLine();
-  printer.println(`${item.qty}x  ${item.name_snapshot}`);
-  if (item.name_zh_snapshot) printer.println(`     ${item.name_zh_snapshot}`);
-  printer.println(`Reason: ${reason}`);
+  say(printer, `${item.qty}x  ${item.name_snapshot}`);
+  if (item.name_zh_snapshot) say(printer, `     ${item.name_zh_snapshot}`);
+  say(printer, `Reason: ${reason}`);
+  printer.newLine();
+  printer.newLine();
   printer.cut();
   await printer.execute();
   console.log(`🚫 VOID ticket printed for item #${item.id} at ${station}`);
@@ -335,9 +471,11 @@ async function handleRefund(job, station) {
   printer.alignLeft();
   row(printer, 'Amount refunded', amount);
   printer.println(`Method: ${order.payment_method || 'cash'}`);
-  printer.println(`Reason: ${reason}`);
-  printer.println(`By: ${by}`);
+  say(printer, `Reason: ${reason}`);
+  say(printer, `By: ${by}`);
   printer.drawLine();
+  printer.newLine();
+  printer.newLine();
   printer.cut();
   await printer.execute();
   console.log(`↩️  Refund slip printed for order #${order.id}`);
@@ -378,20 +516,22 @@ async function handleRestock(job, station) {
   printer.println('*** RESTOCK ***');
   printer.setTextNormal();
   printer.bold(false);
-  printer.println(stationName);
+  say(printer, stationName);
   printer.println(time);
   printer.drawLine();
   printer.alignLeft();
   printer.bold(true);
   printer.setTextSize(1, 1);
-  printer.println(name);
+  say(printer, name);
   printer.setTextNormal();
-  if (nameZh) printer.println(nameZh);
+  if (nameZh) say(printer, nameZh);
   printer.bold(false);
   if (qty) printer.println(`Qty:  ${qty}`);
-  if (note) printer.println(`Note: ${note}`);
+  if (note) say(printer, `Note: ${note}`);
   if (by) printer.println(`By:   ${by}`);
   printer.drawLine();
+  printer.newLine();
+  printer.newLine();
   printer.cut();
   await printer.execute();
   console.log(`🔥 Restock slip printed for ${name} at ${station}`);

@@ -315,6 +315,18 @@ export default function POSTerminal({
         kind: 'kitchen',
         payload: { item_ids },
       }));
+      // Also print a customer-facing "order summary" at the cashier printer
+      // so the customer can see what they ordered before the final bill.
+      // Uses all the new line-item IDs sent to any station this round.
+      const allNewIds = [...byStation.values()].flat();
+      if (allNewIds.length > 0) {
+        jobs.push({
+          order_id: orderId,
+          station: 'cashier',
+          kind: 'order_summary',
+          payload: { item_ids: allNewIds },
+        });
+      }
       if (jobs.length > 0) {
         await supabase.from('print_jobs').insert(jobs);
       }
