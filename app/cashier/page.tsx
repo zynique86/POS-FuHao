@@ -11,6 +11,8 @@ import {
   todayISODate,
   type Shift,
 } from '@/lib/shifts';
+import { logAudit } from '@/lib/expenses';
+import { getCurrentUser } from '@/lib/roles';
 import type { Order as BaseOrder, OrderItem, Payment, PayMethod } from '@/lib/types';
 
 type Order = BaseOrder & { items: OrderItem[]; payments: Payment[] };
@@ -563,7 +565,12 @@ function RefundModal({
       // Mark order refunded
       await supabase
         .from('orders')
-        .update({ status: 'refunded' })
+        .update({
+          status: 'refunded',
+          refunded_at: new Date().toISOString(),
+          refund_reason: reason.trim(),
+          refunded_by: by,
+        })
         .eq('id', order.id);
 
       // Enqueue a refund slip print — goes to the counter printer.
@@ -574,9 +581,25 @@ function RefundModal({
         payload: { reason: reason.trim(), by, amount },
       });
 
+      // Audit trail
+      const me = await getCurrentUser();
+      await logAudit({
+        actor_email: me.email,
+        actor_role: me.role,
+        action: 'refund',
+        target_type: 'order',
+        target_id: order.id,
+        amount,
+        reason: reason.trim(),
+        details: { table: order.table_number, method: order.payment_method ?? 'cash' },
+      });
+
       onDone();
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Refund failed';
+      const msg = e instanceof Error ? e.message
+                : (typeof e === 'object' && e !== null && 'message' in e)
+                  ? String((e as { message: unknown }).message)
+                  : 'Refund failed';
       setErr(msg);
       setBusy(false);
     }
@@ -1170,6 +1193,23 @@ function VoidModal({
       payload: { item_id: itemId, reason: reason || 'no reason given' },
     });
 
+    // Audit trail — owner can review every void with who / when / why.
+    const me = await getCurrentUser();
+    await logAudit({
+      actor_email: me.email,
+      actor_role: me.role,
+      action: 'void',
+      target_type: 'order_item',
+      target_id: itemId,
+      amount: Number(item?.price_at_time ?? 0) * Number(item?.qty ?? 0),
+      reason: reason || 'no reason given',
+      details: {
+        order_id: order.id,
+        table: order.table_number,
+        item_name: item?.name_snapshot,
+      },
+    });
+
     setBusy(false);
     onDone();
   }
@@ -1260,9 +1300,27 @@ function DiscountModal({
         })
         .eq('id', order.id);
       if (error) throw error;
+
+      // Audit trail — every discount (or discount cleared) is recorded.
+      const me = await getCurrentUser();
+      await logAudit({
+        actor_email: me.email,
+        actor_role: me.role,
+        action: 'discount',
+        target_type: 'order',
+        target_id: order.id,
+        amount: Math.round(d * 100) / 100,
+        reason: clear ? 'Discount cleared' : (reason.trim() || 'No reason given'),
+        details: { table: order.table_number, new_total: finalTotal },
+      });
+
       onDone();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to apply');
+      const msg = e instanceof Error ? e.message
+                : (typeof e === 'object' && e !== null && 'message' in e)
+                  ? String((e as { message: unknown }).message)
+                  : 'Failed to apply';
+      setErr(msg);
       setBusy(false);
     }
   }

@@ -219,8 +219,7 @@ export type Expense = {
   description: string | null;
   supplier: string | null;
   receipt_url: string | null;
-  // Wages-specific
-  staff_id: number | null;
+  // Wages-specific — just a name snapshot, no FK
   staff_name: string | null;
   hours: number | null;
   normal_wage: number | null;

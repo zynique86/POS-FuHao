@@ -65,6 +65,28 @@ function fmt(n: number): string {
   return `RM ${(Number(n) || 0).toFixed(2)}`;
 }
 
+// Turn any thrown value into a readable string.
+// Supabase throws plain `{ message, code, hint, details }` objects that don't
+// extend `Error`, so `String(e)` gives "[object Object]".  This function
+// walks the object and stitches together whatever readable text it can find.
+function extractMessage(e: unknown, fallback = 'Something went wrong'): string {
+  if (e == null) return fallback;
+  if (typeof e === 'string') return e || fallback;
+  if (e instanceof Error) return e.message || fallback;
+  if (typeof e === 'object') {
+    const obj = e as { message?: unknown; hint?: unknown; details?: unknown; code?: unknown };
+    const parts: string[] = [];
+    if (typeof obj.message === 'string' && obj.message) parts.push(obj.message);
+    if (typeof obj.details === 'string' && obj.details) parts.push(obj.details);
+    if (typeof obj.hint    === 'string' && obj.hint)    parts.push(`hint: ${obj.hint}`);
+    if (typeof obj.code    === 'string' && obj.code)    parts.push(`(${obj.code})`);
+    if (parts.length > 0) return parts.join(' — ');
+    // Last resort — JSON dump so it's at least inspectable.
+    try { return JSON.stringify(e); } catch { return fallback; }
+  }
+  return String(e);
+}
+
 // -------------------------------------------------------------------------
 // Main page
 // -------------------------------------------------------------------------
@@ -88,7 +110,7 @@ export default function ExpensesPage() {
       setRows(list);
       setMe({ email: u.email });
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(extractMessage(e));
     } finally {
       setLoading(false);
     }
@@ -122,7 +144,7 @@ export default function ExpensesPage() {
       await deleteExpense(id, me.email ?? 'unknown');
       await load();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(extractMessage(e));
     }
   }
 
@@ -382,7 +404,13 @@ function ExpenseForm({
     const { error } = await supabase.storage
       .from('expense-receipts')
       .upload(path, receiptFile, { upsert: false, contentType: receiptFile.type });
-    if (error) throw error;
+    if (error) {
+      // Supabase storage errors are plain objects — wrap so the UI shows
+      // a readable message, not "[object Object]".
+      const msg = (error as { message?: string })?.message
+        ?? 'Failed to upload receipt (is the "expense-receipts" bucket created?)';
+      throw new Error(msg);
+    }
     const { data } = supabase.storage.from('expense-receipts').getPublicUrl(path);
     return data.publicUrl;
   }
@@ -408,7 +436,6 @@ function ExpenseForm({
         description: description || null,
         supplier: kind === 'purchase' ? supplier || null : null,
         receipt_url: receiptUrl,
-        staff_id: null,
         staff_name: kind === 'wages' ? staffName.trim() : null,
         hours: kind === 'wages' && hours ? Number(hours) : null,
         normal_wage: kind === 'wages' && normalWage ? Number(normalWage) : null,
@@ -420,7 +447,7 @@ function ExpenseForm({
       reset();
       await onSaved();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(extractMessage(e));
     } finally {
       setBusy(false);
     }
