@@ -11,7 +11,13 @@ import {
   todayISODate,
   type Shift,
 } from '@/lib/shifts';
-import type { Order as BaseOrder, OrderItem, Payment, PayMethod } from '@/lib/types';
+import {
+  stationForCategory,
+  type Order as BaseOrder,
+  type OrderItem,
+  type Payment,
+  type PayMethod,
+} from '@/lib/types';
 
 type Order = BaseOrder & { items: OrderItem[]; payments: Payment[] };
 
@@ -1163,13 +1169,16 @@ function VoidModal({
     }).eq('id', order.id);
 
     // Void notice — route to the station that was cooking the item.
+    // Routing follows the same CATEGORY-based rule as new orders so a
+    // "no shrimp har gow" void reaches the cashier printer (where the
+    // dim sum was plated), not the back kitchen.
     const menuItemId = item?.menu_item_id ?? -1;
     const { data: menuRow } = await supabase
       .from('menu_items')
-      .select('station')
+      .select('category')
       .eq('id', menuItemId)
       .maybeSingle();
-    const voidStation = (menuRow?.station as 'kitchen' | 'bar') ?? 'kitchen';
+    const voidStation = stationForCategory(menuRow?.category);
 
     await supabase.from('print_jobs').insert({
       order_id: order.id,

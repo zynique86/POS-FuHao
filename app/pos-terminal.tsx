@@ -10,7 +10,13 @@ import { computeBreakdown, sumLines } from '@/lib/pricing';
 import { useSettings } from '@/lib/use-settings';
 import { ModalShell, PrimaryBtn, SecondaryBtn } from '@/components/ui';
 import { getCurrentUser } from '@/lib/roles';
-import { MENU_CATEGORIES, type MenuItem, type ShopSettings } from '@/lib/types';
+import {
+  MENU_CATEGORIES,
+  stationForCategory,
+  type MenuItem,
+  type PrintStation,
+  type ShopSettings,
+} from '@/lib/types';
 
 type CartLine = {
   key: string;         // unique per line (so two lines of same item stay distinct)
@@ -299,25 +305,32 @@ export default function POSTerminal({
         return;
       }
 
-      // Route each new line to its station's printer.
-      // Group inserted item IDs by the menu item's station.
-      const byStation = new Map<string, number[]>();
+      // Route each new line to the right station's printer.
+      // Routing is driven by the item's CATEGORY (not its station field):
+      //   Noodles → kitchen,  Drinks → bar,  everything else → cashier.
+      // See stationForCategory() in lib/types.ts for the single source of
+      // truth.  This matches the shop layout: dim sum / buns / rice /
+      // roasted / other are plated at the front counter near the cashier,
+      // noodles & fried come from the back kitchen, drinks from the bar.
+      const byStation = new Map<PrintStation, number[]>();
       const menuById = new Map(items.map((i) => [i.id, i]));
       for (const row of inserted ?? []) {
         const menu = menuById.get(row.menu_item_id as number);
-        const station = menu?.station ?? 'kitchen';
+        const station = stationForCategory(menu?.category);
         if (!byStation.has(station)) byStation.set(station, []);
         byStation.get(station)!.push(row.id as number);
       }
-      const jobs = [...byStation.entries()].map(([station, item_ids]) => ({
-        order_id: orderId,
-        station,
-        kind: 'kitchen',
-        payload: { item_ids },
-      }));
-      // Also print a customer-facing "order summary" at the cashier printer
-      // so the customer can see what they ordered before the final bill.
-      // Uses all the new line-item IDs sent to any station this round.
+      const jobs: Array<{
+        order_id: number;
+        station: PrintStation;
+        kind: 'kitchen' | 'order_summary';
+        payload: { item_ids: number[] };
+      }> = [];
+
+      // 1) Customer copy FIRST, at the cashier printer, so the customer sees
+      //    everything they ordered (kitchen + bar + counter items together)
+      //    before the per-station prep tickets roll out.  No prices — it's a
+      //    preview; the final bill prints at payment time.
       const allNewIds = [...byStation.values()].flat();
       if (allNewIds.length > 0) {
         jobs.push({
@@ -327,6 +340,16 @@ export default function POSTerminal({
           payload: { item_ids: allNewIds },
         });
       }
+
+      // 2) Then one prep ticket per station.  stationForCategory routes:
+      //    noodles/fried → kitchen, drinks → bar, everything else → the
+      //    cashier/counter (dim sum, buns, rice, roasted, other).  So the
+      //    kitchen never sees drinks, the bar never sees food, and the
+      //    counter prep ticket excludes noodles/fried and drinks.
+      for (const [station, item_ids] of byStation.entries()) {
+        jobs.push({ order_id: orderId, station, kind: 'kitchen', payload: { item_ids } });
+      }
+
       if (jobs.length > 0) {
         await supabase.from('print_jobs').insert(jobs);
       }

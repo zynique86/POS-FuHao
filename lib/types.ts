@@ -27,6 +27,33 @@ export type MenuItem = {
 // cashier is the counter printer for receipts and refunds.
 export type PrintStation = 'kitchen' | 'bar' | 'cashier';
 
+// -------------------------------------------------------------------------
+// CATEGORY → STATION ROUTING
+// -------------------------------------------------------------------------
+// Shop layout decides which printer prepares which food:
+//   • Noodles / Fried  → KITCHEN  (back-of-house prep station)
+//   • Drinks           → BAR      (water/drinks counter)
+//   • Everything else  → CASHIER  (dim sum, buns, rice, roasted meats, other
+//                                   — all sold at the front counter)
+//
+// This is the single source of truth for routing.  Both the POS (when
+// sending new orders) and the Void modal (when reversing an item) call
+// it, so a change here flows through automatically.  The `station` field
+// on `menu_items` is kept for admin display only; routing ignores it.
+export function stationForCategory(
+  category: string | null | undefined
+): PrintStation {
+  // Normalise so stray casing / spacing in the menu data can't misroute an
+  // item (e.g. "noodles ", "FRIED").
+  const c = (category || '').trim().toLowerCase();
+  // Noodles AND fried food are made at the back kitchen.  The shop keeps them
+  // under one "Noodles / Fried" category, but we also accept a standalone
+  // "Fried" category in case the menu is ever split in two.
+  if (c === 'noodles' || c === 'fried' || c === 'noodles / fried') return 'kitchen';
+  if (c === 'drinks') return 'bar';
+  return 'cashier';
+}
+
 export const STATIONS: {
   key: PrintStation;
   label: string;
@@ -148,7 +175,17 @@ export type Payment = {
   created_at: string;
 };
 
-export type PrintJobKind = 'kitchen' | 'receipt' | 'void' | 'refund' | 'restock';
+// 'kitchen'       — prep ticket for a station (kitchen / bar / counter)
+// 'order_summary' — customer copy of the whole order, printed at the cashier
+//                   when the order is first sent (no prices, preview only)
+// 'receipt'       — final itemised bill, printed at the cashier on payment
+export type PrintJobKind =
+  | 'kitchen'
+  | 'order_summary'
+  | 'receipt'
+  | 'void'
+  | 'refund'
+  | 'restock';
 
 export type RestockRequest = {
   id: number;

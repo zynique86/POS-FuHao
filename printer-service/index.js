@@ -14,6 +14,32 @@ const { createClient } = require('@supabase/supabase-js');
 const { ThermalPrinter, PrinterTypes } = require('node-thermal-printer');
 const iconv = require('iconv-lite');
 
+// ---------------------------------------------------------------------------
+// Keep the service alive no matter what.
+//
+// The thermal printer library sometimes rejects its internal socket-timeout
+// promise AFTER our await has already resolved — Node treats that as an
+// "unhandled promise rejection" and kills the whole process by default.
+// We silently absorb those (we already surfaced the error in the job catch)
+// so one offline printer never crashes the service AND the logs stay clean.
+// ---------------------------------------------------------------------------
+const IGNORED_MESSAGES = ['Socket timeout', 'ECONNREFUSED', 'EHOSTUNREACH', 'ETIMEDOUT'];
+
+function isPrinterNetError(err) {
+  const msg = (err && err.message) ? String(err.message) : String(err || '');
+  return IGNORED_MESSAGES.some((s) => msg.includes(s));
+}
+
+process.on('unhandledRejection', (err) => {
+  // Silently drop known printer timeouts — they're already reported per job.
+  if (isPrinterNetError(err)) return;
+  console.warn('⚠️  unhandledRejection:', (err && err.message) ? err.message : err);
+});
+process.on('uncaughtException', (err) => {
+  if (isPrinterNetError(err)) return;
+  console.warn('⚠️  uncaughtException:', (err && err.message) ? err.message : err);
+});
+
 // -------------------------------------------------------------------------
 // Chinese-safe printing
 //
@@ -46,6 +72,27 @@ function say(printer, text) {
   printer.raw(LF);
 }
 
+/**
+ * Returns true only if a value is a real Chinese/English name worth printing.
+ *
+ * Catches the common data-entry mistakes that would otherwise print a lonely
+ * garbage line under every item:
+ *   • null / undefined / empty / whitespace-only
+ *   • placeholder "0", "-", "N/A", "null", "undefined"
+ *   • strings that are only punctuation
+ */
+function hasRealName(s) {
+  if (s == null) return false;
+  const t = String(s).trim();
+  if (t === '') return false;
+  const low = t.toLowerCase();
+  if (low === '0' || low === '-' || low === 'n/a' || low === 'na') return false;
+  if (low === 'null' || low === 'undefined') return false;
+  // All-punctuation / whitespace → not a name
+  if (!/[\p{L}\p{N}]/u.test(t)) return false;
+  return true;
+}
+
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const FALLBACK_SHOP_NAME = process.env.SHOP_NAME || 'DIM SUM SHOP';
@@ -57,11 +104,16 @@ const PRINTERS = {
   cashier: process.env.CASHIER_PRINTER_IP || LEGACY_PRINTER_IP,
 };
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+// When this file is run directly it needs real Supabase credentials.  When it
+// is required by a test harness, the test injects a fake client via
+// __setTestClient() instead, so missing env vars there are fine.
+if (require.main === module && (!SUPABASE_URL || !SUPABASE_ANON_KEY)) {
   console.error('❌ Missing SUPABASE_URL or SUPABASE_ANON_KEY in .env');
   process.exit(1);
 }
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
 
 // --- settings cache --------------------------------------------------------
 let settings = {
@@ -88,13 +140,42 @@ async function refreshSettings() {
 }
 
 // --- printer helpers -------------------------------------------------------
+// IMPORTANT: node-thermal-printer defaults to a 3-second socket timeout, which
+// is too short for XPrinter 80mm units — they need 5-8s to finish the
+// ESC/POS handshake, especially the cashier printer with longer receipts on
+// a shared Wi-Fi network.  We bump it to 15s so a healthy-but-slow printer
+// isn't mistaken for an offline one.  Port 9100 is spelled out explicitly
+// because some library versions pick the wrong default when it's omitted.
 function printerFor(station) {
   const ip = PRINTERS[station];
   if (!ip) return null;
   return new ThermalPrinter({
     type: PrinterTypes.EPSON,
-    interface: `tcp://${ip}`,
+    interface: `tcp://${ip}:9100`,
+    characterSet: 'PC437_USA',
+    removeSpecialCharacters: false,
+    lineCharacter: '-',
+    options: {
+      timeout: 15000,  // 15s — long enough for slow XPrinter + Wi-Fi
+    },
   });
+}
+
+// Try printing with a single retry if the first attempt is a transient
+// Socket timeout.  Thermal printers sometimes drop the first TCP connection
+// if they were idle for a long time; the second attempt almost always works.
+async function executeWithRetry(printer, label) {
+  try {
+    await printer.execute();
+  } catch (err) {
+    const msg = (err && err.message) || String(err);
+    // Only retry on network-ish errors, not on data errors
+    if (!isPrinterNetError({ message: msg })) throw err;
+    console.warn(`   ↻ retrying ${label} after ${msg}…`);
+    // Small backoff — give the printer a breather
+    await new Promise((r) => setTimeout(r, 1500));
+    await printer.execute();
+  }
 }
 
 function stationLabel(station) {
@@ -126,10 +207,22 @@ async function processJob(job) {
       .eq('id', job.id);
   } catch (err) {
     console.error(`❌ Job ${job.id} (${job.kind}/${job.station}) failed:`, err.message);
+    // Mark the job as "attempted" by setting printed_at.  Keeps a bad job
+    // (wrong printer IP, offline printer, etc.) from blocking every other
+    // job behind it in the queue forever.
+    try {
+      await supabase
+        .from('print_jobs')
+        .update({ printed_at: new Date().toISOString() })
+        .eq('id', job.id);
+    } catch { /* ignore secondary error */ }
   }
 }
 
-// --- KITCHEN / BAR TICKET --------------------------------------------------
+// --- KITCHEN / BAR / COUNTER PREP TICKET -----------------------------------
+// One function builds the prep ticket for any of the three stations.  The
+// POS decides where each item line is sent (see stationForCategory in
+// lib/types.ts); this function just prints what it was handed.
 async function handleKitchen(job, station) {
   const itemIds = job.payload?.item_ids ?? [];
   if (!job.order_id || itemIds.length === 0) return;
@@ -141,7 +234,20 @@ async function handleKitchen(job, station) {
   if (!order || !items || items.length === 0) return;
 
   const timeStr = new Date().toLocaleTimeString('en-MY');
-  const stationName = station === 'bar' ? 'BAR / 水吧' : 'KITCHEN / 廚房';
+  // Header per station — the three physical printers in the shop.
+  // Cashier prints a FRONT-COUNTER prep ticket for dim sum / buns / rice /
+  // roasted / other (items plated at the front near the till).
+  const stationName =
+    station === 'bar'     ? 'BAR / 水吧'       :
+    station === 'cashier' ? 'COUNTER / 前台'   :
+                            'KITCHEN / 廚房';
+
+  // Diagnostic — see exactly what each printer is being asked to make.
+  // If "Siu Mai" shows up under "kitchen" below, the menu item's category
+  // is wrong (should be "Dim Sum", not "Noodles") — fix it in Admin > Menu.
+  console.log(
+    `   → ${station.toUpperCase()} getting: ${items.map(i => i.name_snapshot).join(', ')}`
+  );
   const lines = [
     '===================================',
     `           ${stationName}`,
@@ -151,7 +257,9 @@ async function handleKitchen(job, station) {
     '-----------------------------------',
     ...items.flatMap((i) => {
       const rows = [`  ${i.qty}x  ${i.name_snapshot}`];
-      if (i.name_zh_snapshot) rows.push(`         ${i.name_zh_snapshot}`);
+      if (hasRealName(i.name_zh_snapshot)) rows.push(`         ${i.name_zh_snapshot}`);
+      if (i.options) rows.push(`         >> ${i.options}`);
+      if (i.note)    rows.push(`         >> NOTE: ${i.note}`);
       return rows;
     }),
     '===================================',
@@ -176,12 +284,23 @@ async function handleKitchen(job, station) {
     printer.bold(true);
     say(printer, `[ ] ${i.qty}x  ${i.name_snapshot}`);
     printer.bold(false);
-    if (i.name_zh_snapshot) say(printer, `       ${i.name_zh_snapshot}`);
-    if (i.options) {
-      say(printer, `       > ${i.options}`);
+    // Only print Chinese name if it's a real one — skip "0", "-", nulls, etc.
+    // These would otherwise appear as a stray garbage line under each item.
+    if (hasRealName(i.name_zh_snapshot)) {
+      say(printer, `       ${i.name_zh_snapshot}`);
     }
+    // Modifier chips the waiter picked (e.g. "No shrimp, Extra sauce").
+    // These MUST reach the cook so the right dish is made — do not skip.
+    if (i.options) {
+      printer.bold(true);
+      say(printer, `       >> ${i.options}`);
+      printer.bold(false);
+    }
+    // Free-text kitchen note (e.g. "Rush this", "Allergic to peanuts").
     if (i.note) {
-      say(printer, `       > NOTE: ${i.note}`);
+      printer.bold(true);
+      say(printer, `       >> NOTE: ${i.note}`);
+      printer.bold(false);
     }
   });
   printer.drawLine();
@@ -196,16 +315,16 @@ async function handleKitchen(job, station) {
   printer.newLine();
   printer.newLine();
   printer.cut();
-  await printer.execute();
+  await executeWithRetry(printer, `${station} kitchen ticket`);
   console.log(`🖨️  ${station} ticket printed for order #${order.id} (${items.length} items)`);
 }
 
 // --- ORDER SUMMARY (customer copy sent to cashier printer) -----------------
 //
 // Printed at the moment an order is sent to the kitchen so the customer
-// can see what they ordered.  Includes items with prices and a running
-// subtotal — no tax, no payment method, no "thank you".  It's a preview,
-// not a final receipt.
+// can see what they ordered.  NO PRICES — the customer sees the final
+// money at payment time on the receipt.  Just item names, modifiers and
+// notes so there's a clear record of what was ordered.
 async function handleOrderSummary(job, station) {
   const itemIds = job.payload?.item_ids ?? [];
   if (!job.order_id || itemIds.length === 0) return;
@@ -217,9 +336,6 @@ async function handleOrderSummary(job, station) {
   if (!order || !items || items.length === 0) return;
 
   const when = new Date().toLocaleString('en-MY');
-  const runningSubtotal = items.reduce(
-    (s, i) => s + Number(i.price_at_time) * Number(i.qty), 0
-  );
 
   const lines = [
     `${settings.shop_name}`,
@@ -229,13 +345,12 @@ async function handleOrderSummary(job, station) {
     '*** ORDER SUMMARY / 訂單概覽 ***',
     '',
     ...items.flatMap((i) => {
-      const t = Number(i.price_at_time) * Number(i.qty);
-      const rows = [`${i.qty}x ${i.name_snapshot}  RM ${t.toFixed(2)}`];
-      if (i.name_zh_snapshot) rows.push(`   ${i.name_zh_snapshot}`);
+      const rows = [`${i.qty}x ${i.name_snapshot}`];
+      if (hasRealName(i.name_zh_snapshot)) rows.push(`   ${i.name_zh_snapshot}`);
+      if (i.options) rows.push(`   > ${i.options}`);
+      if (i.note)    rows.push(`   > ${i.note}`);
       return rows;
     }),
-    '',
-    `Subtotal (so far):   RM ${runningSubtotal.toFixed(2)}`,
     '',
     '(This is a preview — final bill at cashier)',
   ];
@@ -247,7 +362,7 @@ async function handleOrderSummary(job, station) {
   printer.bold(true);
   say(printer, settings.shop_name);
   printer.bold(false);
-  if (settings.shop_name_zh) say(printer, settings.shop_name_zh);
+  if (hasRealName(settings.shop_name_zh)) say(printer, settings.shop_name_zh);
   printer.println(`Table ${order.table_number} - Order #${order.id}`);
   printer.println(when);
   printer.drawLine();
@@ -258,22 +373,14 @@ async function handleOrderSummary(job, station) {
 
   printer.alignLeft();
   items.forEach((i) => {
-    const lineTotal = Number(i.price_at_time) * Number(i.qty);
-    printer.tableCustom([
-      { text: `${i.qty}x ${i.name_snapshot}`, width: 0.7 },
-      { text: `RM ${lineTotal.toFixed(2)}`, width: 0.3, align: 'RIGHT' },
-    ]);
-    if (i.name_zh_snapshot) say(printer, `   ${i.name_zh_snapshot}`);
+    // No prices — just item line (left-aligned) + Chinese name + any extras.
+    say(printer, `${i.qty}x ${i.name_snapshot}`);
+    if (hasRealName(i.name_zh_snapshot)) say(printer, `   ${i.name_zh_snapshot}`);
     if (i.options) say(printer, `   > ${i.options}`);
     if (i.note)    say(printer, `   > ${i.note}`);
   });
 
   printer.drawLine();
-  printer.bold(true);
-  row(printer, 'Subtotal (so far)', runningSubtotal);
-  printer.bold(false);
-  printer.drawLine();
-
   printer.alignCenter();
   say(printer, 'This is a preview — final bill at cashier');
   say(printer, '這只是預覽 — 賬單以收銀為準');
@@ -281,7 +388,7 @@ async function handleOrderSummary(job, station) {
   printer.newLine();
   printer.cut();
 
-  await printer.execute();
+  await executeWithRetry(printer, `order summary`);
   console.log(`📋 Order summary printed for order #${order.id} at ${station}`);
 }
 
@@ -310,7 +417,7 @@ async function handleReceipt(job, station) {
   const lines = [
     '===================================',
     `         ${settings.shop_name}`,
-    ...(settings.shop_name_zh ? [`         ${settings.shop_name_zh}`] : []),
+    ...(hasRealName(settings.shop_name_zh) ? [`         ${settings.shop_name_zh}`] : []),
     ...settings.address.split('\n').filter(Boolean).map((l) => `   ${l}`),
     '===================================',
     `Table ${order.table_number}   Order #${order.id}`,
@@ -321,7 +428,12 @@ async function handleReceipt(job, station) {
   items.forEach((i) => {
     const lineTotal = Number(i.price_at_time) * i.qty;
     lines.push(`${i.qty}x ${i.name_snapshot.padEnd(20)} RM ${lineTotal.toFixed(2)}`);
-    if (i.name_zh_snapshot) lines.push(`     ${i.name_zh_snapshot}`);
+    if (hasRealName(i.name_zh_snapshot)) lines.push(`     ${i.name_zh_snapshot}`);
+    // Special requests the customer made — modifier chips and the free-text
+    // note.  These MUST appear on the receipt so the customer can confirm
+    // what they asked for (e.g. "No pork", "Allergic to peanut").
+    if (i.options) lines.push(`     > ${i.options}`);
+    if (i.note)    lines.push(`     > ${i.note}`);
   });
   lines.push('-----------------------------------');
   lines.push(`Subtotal:              RM ${subtotal.toFixed(2)}`);
@@ -341,7 +453,7 @@ async function handleReceipt(job, station) {
   printer.bold(true);
   say(printer, settings.shop_name);
   printer.bold(false);
-  if (settings.shop_name_zh) say(printer, settings.shop_name_zh);
+  if (hasRealName(settings.shop_name_zh)) say(printer, settings.shop_name_zh);
   settings.address.split('\n').filter(Boolean).forEach((l) => say(printer, l));
   printer.println(`Table ${order.table_number} - Order #${order.id}`);
   printer.println(when);
@@ -359,7 +471,7 @@ async function handleReceipt(job, station) {
       { text: `${i.qty}x ${i.name_snapshot}`, width: 0.7 },
       { text: `RM ${lineTotal.toFixed(2)}`, width: 0.3, align: 'RIGHT' },
     ]);
-    if (i.name_zh_snapshot) say(printer, `   ${i.name_zh_snapshot}`);
+    if (hasRealName(i.name_zh_snapshot)) say(printer, `   ${i.name_zh_snapshot}`);
     if (i.options) say(printer, `   > ${i.options}`);
     if (i.note)    say(printer, `   > ${i.note}`);
   });
@@ -381,7 +493,7 @@ async function handleReceipt(job, station) {
   printer.newLine();
   printer.newLine();
   printer.cut();
-  await printer.execute();
+  await executeWithRetry(printer, `receipt`);
   console.log(`🖨️  Receipt printed for order #${order.id}${isReprint ? ' (reprint)' : ''}`);
 }
 
@@ -401,7 +513,7 @@ async function handleVoid(job, station) {
     time,
     `Order #${item.order_id}`,
     `${item.qty}x  ${item.name_snapshot}`,
-    ...(item.name_zh_snapshot ? [`     ${item.name_zh_snapshot}`] : []),
+    ...(hasRealName(item.name_zh_snapshot) ? [`     ${item.name_zh_snapshot}`] : []),
     `Reason: ${reason}`,
     '###################################',
   ];
@@ -419,12 +531,12 @@ async function handleVoid(job, station) {
   printer.println(`Order #${item.order_id}`);
   printer.drawLine();
   say(printer, `${item.qty}x  ${item.name_snapshot}`);
-  if (item.name_zh_snapshot) say(printer, `     ${item.name_zh_snapshot}`);
+  if (hasRealName(item.name_zh_snapshot)) say(printer, `     ${item.name_zh_snapshot}`);
   say(printer, `Reason: ${reason}`);
   printer.newLine();
   printer.newLine();
   printer.cut();
-  await printer.execute();
+  await executeWithRetry(printer, `void ticket`);
   console.log(`🚫 VOID ticket printed for item #${item.id} at ${station}`);
 }
 
@@ -477,7 +589,7 @@ async function handleRefund(job, station) {
   printer.newLine();
   printer.newLine();
   printer.cut();
-  await printer.execute();
+  await executeWithRetry(printer, `refund slip`);
   console.log(`↩️  Refund slip printed for order #${order.id}`);
 }
 
@@ -500,7 +612,7 @@ async function handleRestock(job, station) {
     time,
     '',
     `Item: ${name}`,
-    ...(nameZh ? [`     ${nameZh}`] : []),
+    ...(hasRealName(nameZh) ? [`     ${nameZh}`] : []),
     ...(qty ? [`Qty:  ${qty}`] : []),
     ...(note ? [`Note: ${note}`] : []),
     ...(by ? [`By:   ${by}`] : []),
@@ -524,7 +636,7 @@ async function handleRestock(job, station) {
   printer.setTextSize(1, 1);
   say(printer, name);
   printer.setTextNormal();
-  if (nameZh) say(printer, nameZh);
+  if (hasRealName(nameZh)) say(printer, nameZh);
   printer.bold(false);
   if (qty) printer.println(`Qty:  ${qty}`);
   if (note) say(printer, `Note: ${note}`);
@@ -533,7 +645,7 @@ async function handleRestock(job, station) {
   printer.newLine();
   printer.newLine();
   printer.cut();
-  await printer.execute();
+  await executeWithRetry(printer, `restock slip`);
   console.log(`🔥 Restock slip printed for ${name} at ${station}`);
 }
 
@@ -589,12 +701,42 @@ async function main() {
     });
 }
 
-main().catch((e) => {
-  console.error('Fatal:', e);
-  process.exit(1);
-});
+// Only boot the live service when run directly (`node index.js`).  When a test
+// requires this file it drives processJob() against a fake client instead.
+if (require.main === module) {
+  main().catch((e) => {
+    console.error('Fatal:', e);
+    process.exit(1);
+  });
 
-process.on('SIGINT', () => {
-  console.log('\n👋 Printer service stopping.');
-  process.exit(0);
-});
+  process.on('SIGINT', () => {
+    console.log('\n👋 Printer service stopping.');
+    process.exit(0);
+  });
+}
+
+// --- test hooks ------------------------------------------------------------
+// Let a test swap in a fake Supabase client and preset settings without
+// touching the network or a real printer (printers fall back to console when
+// no station IP is configured).
+function __setTestClient(client, testSettings) {
+  supabase = client;
+  if (testSettings) settings = { ...settings, ...testSettings };
+}
+
+module.exports = {
+  processJob,
+  handleKitchen,
+  handleOrderSummary,
+  handleReceipt,
+  handleVoid,
+  handleRefund,
+  handleRestock,
+  stationForCategory: (category) => {
+    const c = (category || '').trim().toLowerCase();
+    if (c === 'noodles' || c === 'fried' || c === 'noodles / fried') return 'kitchen';
+    if (c === 'drinks') return 'bar';
+    return 'cashier';
+  },
+  __setTestClient,
+};

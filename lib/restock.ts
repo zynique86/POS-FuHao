@@ -25,11 +25,14 @@ export async function requestRestock(
     .single();
   if (error) throw error;
 
-  // Also enqueue a physical printed slip at the item's own station
-  // (drinks → bar printer, food → kitchen printer).
+  // Restock slips ALWAYS print at the kitchen printer, regardless of
+  // the item's category.  Per the shop workflow: the back kitchen handles
+  // all restocking (noodles, fried food, and dim sum made in batches),
+  // so one printer owns the restock queue.  Drinks are stocked
+  // continuously by the bar staff and don't go through this flow.
   await supabase.from('print_jobs').insert({
     kind: 'restock',
-    station: item.station ?? 'kitchen',
+    station: 'kitchen',
     payload: {
       restock_id: data.id,
       item_name: item.name_en,
