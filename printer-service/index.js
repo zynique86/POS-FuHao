@@ -131,6 +131,13 @@ function hasRealName(s) {
 // column off the edge, so we default to a safe 42 and let .env override it
 // (RECEIPT_WIDTH).  Used for BOTH the printer layout and the console fallback.
 const RECEIPT_WIDTH = Number(process.env.RECEIPT_WIDTH) || 42;
+
+// Pre-order contact numbers printed at the bottom of every receipt.  Override
+// in .env with PREORDER_PHONES=011...,012... (comma-separated) if they change.
+const PREORDER_PHONES = (process.env.PREORDER_PHONES || '0135711396, 0174968928')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 const COL_L = 0.62;                // left column width (printer tableCustom)
 const COL_R = 0.38;                // right column width (printer tableCustom)
 
@@ -411,8 +418,8 @@ async function handleKitchen(job, station) {
 //
 // Printed the moment an order is sent, so the waiter can hand the customer a
 // copy of EVERYTHING they ordered this round (kitchen + counter + bar), with
-// every special request.  It shows prices and a round subtotal but is clearly
-// marked "not a receipt" — the final bill prints at payment time.
+// every special request.  NO PRICES — it's just a list of what was ordered so
+// the customer can check it; the final bill prints at payment time.
 async function handleOrderSummary(job, station) {
   const itemIds = job.payload?.item_ids ?? [];
   if (!job.order_id || itemIds.length === 0) return;
@@ -424,9 +431,6 @@ async function handleOrderSummary(job, station) {
   if (!order || !items || items.length === 0) return;
 
   const when = new Date().toLocaleString('en-MY');
-  const roundSubtotal = items.reduce(
-    (s, i) => s + Number(i.price_at_time) * Number(i.qty), 0
-  );
 
   // ---- console-fallback text (mirrors the printed layout) ----
   const W = RECEIPT_WIDTH;
@@ -438,18 +442,14 @@ async function handleOrderSummary(job, station) {
     padRow(`Table ${order.table_number}`, `Order #${order.id}`, W),
     when,
     '-'.repeat(W),
-    padRow('ITEM', 'RM', W),
-    '-'.repeat(W),
   ];
   items.forEach((i) => {
-    lines.push(padRow(`${i.qty} x ${i.name_snapshot}`, money(Number(i.price_at_time) * i.qty), W));
+    lines.push(`${i.qty} x ${i.name_snapshot}`);
     if (hasRealName(i.name_zh_snapshot)) lines.push(`   ${i.name_zh_snapshot}`);
     if (i.options) lines.push(`   - ${i.options}`);
     if (i.note)    lines.push(`   - ${i.note}`);
   });
   lines.push('-'.repeat(W));
-  lines.push(padRow('Subtotal', money(roundSubtotal), W));
-  lines.push('');
   lines.push(centerText('** NOT A RECEIPT **', W));
   lines.push(centerText('Final bill at cashier', W));
 
@@ -474,26 +474,16 @@ async function handleOrderSummary(job, station) {
   if (hasRealName(order.taken_by_name)) printer.println(`Served by: ${order.taken_by_name}`);
   printer.drawLine();
 
-  printer.bold(true);
-  printer.tableCustom([
-    { text: 'ITEM', width: COL_L },
-    { text: 'RM', width: COL_R, align: 'RIGHT' },
-  ]);
-  printer.bold(false);
-  printer.drawLine();
-
+  // Items only — no prices.  Qty + name, Chinese name, and any special request.
   items.forEach((i) => {
-    printer.tableCustom([
-      { text: `${i.qty} x ${i.name_snapshot}`, width: COL_L },
-      { text: money(Number(i.price_at_time) * i.qty), width: COL_R, align: 'RIGHT' },
-    ]);
+    printer.bold(true);
+    say(printer, `${i.qty} x ${i.name_snapshot}`);
+    printer.bold(false);
     if (hasRealName(i.name_zh_snapshot)) say(printer, `   ${i.name_zh_snapshot}`);
     printExtras(printer, i);
   });
 
   printer.drawLine();
-  amountRow(printer, 'Subtotal', roundSubtotal, true);
-  printer.newLine();
   printer.alignCenter();
   printer.bold(true);
   say(printer, '** NOT A RECEIPT **');
@@ -576,6 +566,9 @@ async function handleReceipt(job, station) {
   lines.push('');
   lines.push(centerText('Thank You! 多謝惠顧', W));
   lines.push(centerText('Please come again', W));
+  lines.push('');
+  lines.push(centerText('Pre-order 預訂:', W));
+  lines.push(centerText(PREORDER_PHONES.join('   '), W));
 
   const printer = printerFor(station);
   if (!printer) return consoleFallback(station, 'receipt', lines);
@@ -638,6 +631,11 @@ async function handleReceipt(job, station) {
   say(printer, 'Thank You! 多謝惠顧');
   printer.bold(false);
   say(printer, 'Please come again');
+  printer.newLine();
+  say(printer, 'Pre-order 預訂:');
+  printer.bold(true);
+  say(printer, PREORDER_PHONES.join('   '));
+  printer.bold(false);
   finish(printer);
   await executeWithRetry(printer, `receipt`);
   console.log(`🖨️  Receipt printed for order #${order.id}${isReprint ? ' (reprint)' : ''}`);
