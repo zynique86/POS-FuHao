@@ -93,6 +93,58 @@ function hasRealName(s) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Receipt formatting helpers
+//
+// An 80mm thermal printer fits ~48 characters per line in Font A.  These
+// helpers keep every slip aligned the same way: a left label and a
+// right-aligned amount, or centered header text.  They're used BOTH for the
+// console-fallback text and (conceptually) mirror the on-printer tableCustom
+// columns, so the preview and the paper match.
+// ---------------------------------------------------------------------------
+const RECEIPT_WIDTH = 42;          // chars for console-fallback text
+const COL_L = 0.62;                // left column width (printer tableCustom)
+const COL_R = 0.38;                // right column width (printer tableCustom)
+
+// Money, always 2dp, negative shown as "-12.00" (no currency symbol in the
+// amount column — the column header carries "RM").
+function money(v) {
+  const n = Number(v) || 0;
+  return (n < 0 ? '-' : '') + Math.abs(n).toFixed(2);
+}
+
+// Left text + right text padded to a fixed width (for console fallback).
+function padRow(left, right, width = RECEIPT_WIDTH) {
+  const l = String(left);
+  const r = String(right);
+  const gap = Math.max(1, width - l.length - r.length);
+  return l + ' '.repeat(gap) + r;
+}
+
+function centerText(s, width = RECEIPT_WIDTH) {
+  const t = String(s);
+  if (t.length >= width) return t;
+  return ' '.repeat(Math.floor((width - t.length) / 2)) + t;
+}
+
+// One two-column row on the printer (label left, amount right), optionally bold.
+function amountRow(printer, label, value, bold = false) {
+  if (bold) printer.bold(true);
+  printer.tableCustom([
+    { text: String(label), width: COL_L },
+    { text: money(value), width: COL_R, align: 'RIGHT' },
+  ]);
+  if (bold) printer.bold(false);
+}
+
+// Print an item's special requests (modifiers + free-text note) indented
+// under the item.  THIS is the "no spicy / less sugar" line the customer
+// asked for — it must appear on every customer-facing slip.
+function printExtras(printer, item) {
+  if (item.options) say(printer, `   - ${item.options}`);
+  if (item.note)    say(printer, `   - ${item.note}`);
+}
+
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const FALLBACK_SHOP_NAME = process.env.SHOP_NAME || 'DIM SUM SHOP';
@@ -319,12 +371,12 @@ async function handleKitchen(job, station) {
   console.log(`🖨️  ${station} ticket printed for order #${order.id} (${items.length} items)`);
 }
 
-// --- ORDER SUMMARY (customer copy sent to cashier printer) -----------------
+// --- CUSTOMER COPY (order summary sent to the cashier printer) -------------
 //
-// Printed at the moment an order is sent to the kitchen so the customer
-// can see what they ordered.  NO PRICES — the customer sees the final
-// money at payment time on the receipt.  Just item names, modifiers and
-// notes so there's a clear record of what was ordered.
+// Printed the moment an order is sent, so the waiter can hand the customer a
+// copy of EVERYTHING they ordered this round (kitchen + counter + bar), with
+// every special request.  It shows prices and a round subtotal but is clearly
+// marked "not a receipt" — the final bill prints at payment time.
 async function handleOrderSummary(job, station) {
   const itemIds = job.payload?.item_ids ?? [];
   if (!job.order_id || itemIds.length === 0) return;
@@ -336,69 +388,100 @@ async function handleOrderSummary(job, station) {
   if (!order || !items || items.length === 0) return;
 
   const when = new Date().toLocaleString('en-MY');
+  const roundSubtotal = items.reduce(
+    (s, i) => s + Number(i.price_at_time) * Number(i.qty), 0
+  );
 
+  // ---- console-fallback text (mirrors the printed layout) ----
+  const W = RECEIPT_WIDTH;
   const lines = [
-    `${settings.shop_name}`,
-    `Table ${order.table_number} · Order #${order.id}`,
-    `${when}`,
-    '',
-    '*** ORDER SUMMARY / 訂單概覽 ***',
-    '',
-    ...items.flatMap((i) => {
-      const rows = [`${i.qty}x ${i.name_snapshot}`];
-      if (hasRealName(i.name_zh_snapshot)) rows.push(`   ${i.name_zh_snapshot}`);
-      if (i.options) rows.push(`   > ${i.options}`);
-      if (i.note)    rows.push(`   > ${i.note}`);
-      return rows;
-    }),
-    '',
-    '(This is a preview — final bill at cashier)',
+    centerText(settings.shop_name, W),
+    ...(hasRealName(settings.shop_name_zh) ? [centerText(settings.shop_name_zh, W)] : []),
+    centerText('CUSTOMER COPY / 顧客聯', W),
+    '-'.repeat(W),
+    padRow(`Table ${order.table_number}`, `Order #${order.id}`, W),
+    when,
+    '-'.repeat(W),
+    padRow('ITEM', 'RM', W),
+    '-'.repeat(W),
   ];
+  items.forEach((i) => {
+    lines.push(padRow(`${i.qty} x ${i.name_snapshot}`, money(Number(i.price_at_time) * i.qty), W));
+    if (hasRealName(i.name_zh_snapshot)) lines.push(`   ${i.name_zh_snapshot}`);
+    if (i.options) lines.push(`   - ${i.options}`);
+    if (i.note)    lines.push(`   - ${i.note}`);
+  });
+  lines.push('-'.repeat(W));
+  lines.push(padRow('Subtotal', money(roundSubtotal), W));
+  lines.push('');
+  lines.push(centerText('** NOT A RECEIPT **', W));
+  lines.push(centerText('Final bill at cashier', W));
 
   const printer = printerFor(station);
   if (!printer) return consoleFallback(station, 'order_summary', lines);
 
+  // ---- printer ----
   printer.alignCenter();
   printer.bold(true);
+  printer.setTextSize(1, 1);
   say(printer, settings.shop_name);
-  printer.bold(false);
+  printer.setTextNormal();
   if (hasRealName(settings.shop_name_zh)) say(printer, settings.shop_name_zh);
-  printer.println(`Table ${order.table_number} - Order #${order.id}`);
-  printer.println(when);
-  printer.drawLine();
-  printer.bold(true);
-  say(printer, '*** ORDER SUMMARY / 訂單概覽 ***');
+  printer.newLine();
+  say(printer, 'CUSTOMER COPY / 顧客聯');
   printer.bold(false);
   printer.drawLine();
 
   printer.alignLeft();
+  printer.leftRight(`Table ${order.table_number}`, `Order #${order.id}`);
+  printer.println(when);
+  if (hasRealName(order.taken_by_name)) printer.println(`Served by: ${order.taken_by_name}`);
+  printer.drawLine();
+
+  printer.bold(true);
+  printer.tableCustom([
+    { text: 'ITEM', width: COL_L },
+    { text: 'RM', width: COL_R, align: 'RIGHT' },
+  ]);
+  printer.bold(false);
+  printer.drawLine();
+
   items.forEach((i) => {
-    // No prices — just item line (left-aligned) + Chinese name + any extras.
-    say(printer, `${i.qty}x ${i.name_snapshot}`);
+    printer.tableCustom([
+      { text: `${i.qty} x ${i.name_snapshot}`, width: COL_L },
+      { text: money(Number(i.price_at_time) * i.qty), width: COL_R, align: 'RIGHT' },
+    ]);
     if (hasRealName(i.name_zh_snapshot)) say(printer, `   ${i.name_zh_snapshot}`);
-    if (i.options) say(printer, `   > ${i.options}`);
-    if (i.note)    say(printer, `   > ${i.note}`);
+    printExtras(printer, i);
   });
 
   printer.drawLine();
+  amountRow(printer, 'Subtotal', roundSubtotal, true);
+  printer.newLine();
   printer.alignCenter();
-  say(printer, 'This is a preview — final bill at cashier');
-  say(printer, '這只是預覽 — 賬單以收銀為準');
+  printer.bold(true);
+  say(printer, '** NOT A RECEIPT **');
+  printer.bold(false);
+  say(printer, 'Final bill at cashier / 賬單以收銀為準');
   printer.newLine();
   printer.newLine();
   printer.cut();
 
-  await executeWithRetry(printer, `order summary`);
-  console.log(`📋 Order summary printed for order #${order.id} at ${station}`);
+  await executeWithRetry(printer, `customer copy`);
+  console.log(`📋 Customer copy printed for order #${order.id} at ${station}`);
 }
 
 // --- CUSTOMER RECEIPT ------------------------------------------------------
+// The final, itemised bill handed to the customer at payment.  Formatted like
+// a proper retail receipt: centered header, aligned item + amount columns,
+// aligned totals block, payment + change, and every special request shown.
 async function handleReceipt(job, station) {
   if (!job.order_id) return;
 
-  const [{ data: order }, { data: allItems }] = await Promise.all([
+  const [{ data: order }, { data: allItems }, { data: pays }] = await Promise.all([
     supabase.from('orders').select('*').eq('id', job.order_id).single(),
     supabase.from('order_items').select('*').eq('order_id', job.order_id).order('id'),
+    supabase.from('payments').select('*').eq('order_id', job.order_id).order('id'),
   ]);
   if (!order) return;
 
@@ -414,82 +497,113 @@ async function handleReceipt(job, station) {
   const when = new Date().toLocaleString('en-MY');
   const isReprint = !!(order.paid_at && job.payload?.reprint);
 
+  const method = order.payment_method || ((pays && pays[0]) ? pays[0].method : 'cash');
+  const lastPay = (pays || []).filter((p) => Number(p.amount) > 0).slice(-1)[0];
+  const received = lastPay && lastPay.received != null ? Number(lastPay.received) : null;
+  const change = lastPay && lastPay.change_given != null ? Number(lastPay.change_given) : null;
+
+  const addressLines = (settings.address || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const svcLabel = `Service${settings.service_charge_pct ? ' ' + settings.service_charge_pct + '%' : ''}`;
+  const taxLabel = `SST${settings.sst_pct ? ' ' + settings.sst_pct + '%' : ''}`;
+
+  // ---- console-fallback text (mirrors the printed layout) ----
+  const W = RECEIPT_WIDTH;
   const lines = [
-    '===================================',
-    `         ${settings.shop_name}`,
-    ...(hasRealName(settings.shop_name_zh) ? [`         ${settings.shop_name_zh}`] : []),
-    ...settings.address.split('\n').filter(Boolean).map((l) => `   ${l}`),
-    '===================================',
-    `Table ${order.table_number}   Order #${order.id}`,
+    centerText(settings.shop_name, W),
+    ...(hasRealName(settings.shop_name_zh) ? [centerText(settings.shop_name_zh, W)] : []),
+    ...addressLines.map((l) => centerText(l, W)),
+    centerText(isReprint ? 'RECEIPT (REPRINT)' : 'RECEIPT', W),
+    '='.repeat(W),
+    padRow(`Table ${order.table_number}`, `Order #${order.id}`, W),
     when,
-    ...(isReprint ? ['*** REPRINT ***'] : []),
-    '-----------------------------------',
+    ...(hasRealName(order.taken_by_name) ? [`Served by: ${order.taken_by_name}`] : []),
+    '-'.repeat(W),
+    padRow('ITEM', 'RM', W),
+    '-'.repeat(W),
   ];
   items.forEach((i) => {
-    const lineTotal = Number(i.price_at_time) * i.qty;
-    lines.push(`${i.qty}x ${i.name_snapshot.padEnd(20)} RM ${lineTotal.toFixed(2)}`);
-    if (hasRealName(i.name_zh_snapshot)) lines.push(`     ${i.name_zh_snapshot}`);
-    // Special requests the customer made — modifier chips and the free-text
-    // note.  These MUST appear on the receipt so the customer can confirm
-    // what they asked for (e.g. "No pork", "Allergic to peanut").
-    if (i.options) lines.push(`     > ${i.options}`);
-    if (i.note)    lines.push(`     > ${i.note}`);
+    lines.push(padRow(`${i.qty} x ${i.name_snapshot}`, money(Number(i.price_at_time) * i.qty), W));
+    if (hasRealName(i.name_zh_snapshot)) lines.push(`   ${i.name_zh_snapshot}`);
+    if (i.options) lines.push(`   - ${i.options}`);
+    if (i.note)    lines.push(`   - ${i.note}`);
   });
-  lines.push('-----------------------------------');
-  lines.push(`Subtotal:              RM ${subtotal.toFixed(2)}`);
-  if (svc > 0) lines.push(`Service ${settings.service_charge_pct}%:          RM ${svc.toFixed(2)}`);
-  if (tax > 0) lines.push(`SST ${settings.sst_pct}%:              RM ${tax.toFixed(2)}`);
-  if (rounding !== 0) lines.push(`Rounding:              RM ${rounding.toFixed(2)}`);
-  lines.push(`TOTAL:                 RM ${total.toFixed(2)}`);
-  lines.push(`Method: ${order.payment_method || 'cash'}`);
-  lines.push('===================================');
-  lines.push('       Thank you — 多謝');
-  lines.push('===================================');
+  lines.push('-'.repeat(W));
+  lines.push(padRow('Subtotal', money(subtotal), W));
+  if (svc > 0) lines.push(padRow(svcLabel, money(svc), W));
+  if (tax > 0) lines.push(padRow(taxLabel, money(tax), W));
+  if (discount > 0) lines.push(padRow(`Discount${discountReason ? ' (' + discountReason + ')' : ''}`, money(-discount), W));
+  if (rounding !== 0) lines.push(padRow('Rounding', money(rounding), W));
+  lines.push('='.repeat(W));
+  lines.push(padRow('TOTAL', money(total), W));
+  lines.push('='.repeat(W));
+  lines.push(padRow('Payment', String(method).toUpperCase(), W));
+  if (received != null) lines.push(padRow('Cash', money(received), W));
+  if (change != null) lines.push(padRow('Change', money(change), W));
+  lines.push('');
+  lines.push(centerText('Thank You! 多謝惠顧', W));
+  lines.push(centerText('Please come again', W));
 
   const printer = printerFor(station);
   if (!printer) return consoleFallback(station, 'receipt', lines);
 
+  // ---- printer ----
   printer.alignCenter();
   printer.bold(true);
+  printer.setTextSize(1, 1);
   say(printer, settings.shop_name);
-  printer.bold(false);
+  printer.setTextNormal();
   if (hasRealName(settings.shop_name_zh)) say(printer, settings.shop_name_zh);
-  settings.address.split('\n').filter(Boolean).forEach((l) => say(printer, l));
-  printer.println(`Table ${order.table_number} - Order #${order.id}`);
-  printer.println(when);
-  if (isReprint) {
-    printer.bold(true);
-    printer.println('*** REPRINT ***');
-    printer.bold(false);
-  }
+  printer.bold(false);
+  addressLines.forEach((l) => say(printer, l));
+  printer.newLine();
+  printer.bold(true);
+  say(printer, isReprint ? 'RECEIPT (REPRINT)' : 'RECEIPT');
+  printer.bold(false);
   printer.drawLine();
+
   printer.alignLeft();
+  printer.leftRight(`Table ${order.table_number}`, `Order #${order.id}`);
+  printer.println(when);
+  if (hasRealName(order.taken_by_name)) printer.println(`Served by: ${order.taken_by_name}`);
+  printer.drawLine();
+
+  printer.bold(true);
+  printer.tableCustom([
+    { text: 'ITEM', width: COL_L },
+    { text: 'RM', width: COL_R, align: 'RIGHT' },
+  ]);
+  printer.bold(false);
+  printer.drawLine();
+
   items.forEach((i) => {
-    const lineTotal = Number(i.price_at_time) * i.qty;
-    // The tableCustom columns are ASCII-only (qty + English + price).
     printer.tableCustom([
-      { text: `${i.qty}x ${i.name_snapshot}`, width: 0.7 },
-      { text: `RM ${lineTotal.toFixed(2)}`, width: 0.3, align: 'RIGHT' },
+      { text: `${i.qty} x ${i.name_snapshot}`, width: COL_L },
+      { text: money(Number(i.price_at_time) * i.qty), width: COL_R, align: 'RIGHT' },
     ]);
     if (hasRealName(i.name_zh_snapshot)) say(printer, `   ${i.name_zh_snapshot}`);
-    if (i.options) say(printer, `   > ${i.options}`);
-    if (i.note)    say(printer, `   > ${i.note}`);
+    printExtras(printer, i);
   });
+
   printer.drawLine();
-  row(printer, 'Subtotal', subtotal);
-  if (svc > 0) row(printer, `Service ${settings.service_charge_pct}%`, svc);
-  if (tax > 0) row(printer, `SST ${settings.sst_pct}%`, tax);
-  if (discount > 0) {
-    row(printer, `Discount${discountReason ? ' (' + discountReason + ')' : ''}`, -discount);
-  }
-  if (rounding !== 0) row(printer, 'Rounding', rounding);
-  printer.bold(true);
-  row(printer, 'TOTAL', total);
-  printer.bold(false);
-  printer.println(`Method: ${order.payment_method || 'cash'}`);
+  amountRow(printer, 'Subtotal', subtotal);
+  if (svc > 0) amountRow(printer, svcLabel, svc);
+  if (tax > 0) amountRow(printer, taxLabel, tax);
+  if (discount > 0) amountRow(printer, `Discount${discountReason ? ' (' + discountReason + ')' : ''}`, -discount);
+  if (rounding !== 0) amountRow(printer, 'Rounding', rounding);
   printer.drawLine();
+  amountRow(printer, 'TOTAL', total, true);
+  printer.drawLine();
+
+  printer.leftRight('Payment', String(method).toUpperCase());
+  if (received != null) amountRow(printer, 'Cash', received);
+  if (change != null) amountRow(printer, 'Change', change);
+
+  printer.newLine();
   printer.alignCenter();
-  say(printer, 'Thank you - 多謝');
+  printer.bold(true);
+  say(printer, 'Thank You! 多謝惠顧');
+  printer.bold(false);
+  say(printer, 'Please come again');
   printer.newLine();
   printer.newLine();
   printer.cut();
