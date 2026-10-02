@@ -76,7 +76,7 @@ export async function updateExpense(id: number, patch: Partial<Expense>) {
   return data as Expense;
 }
 
-export async function deleteExpense(id: number, _actorEmail: string, _reason?: string) {
+export async function deleteExpense(id: number) {
   const { error } = await supabase.from('expenses').delete().eq('id', id);
   if (error) throw toError(error, 'Failed to delete expense');
 }

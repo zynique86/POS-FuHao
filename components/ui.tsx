@@ -191,28 +191,6 @@ export function ConfirmBtn({
   );
 }
 
-export function DangerBtn({
-  children,
-  onClick,
-  disabled,
-  className = '',
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  disabled?: boolean;
-  className?: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`w-full font-bold py-3 rounded-2xl transition text-[var(--brand-700)] bg-[var(--brand-50)] hover:bg-[var(--brand-100)] border border-[var(--brand-200)] disabled:opacity-60 ${className}`}
-    >
-      {children}
-    </button>
-  );
-}
-
 // ─── modal shell ──────────────────────────────────────────────────────────
 
 export function ModalShell({

@@ -60,17 +60,6 @@ export function stationForCategory(
   return 'cashier';
 }
 
-export const STATIONS: {
-  key: PrintStation;
-  label: string;
-  label_zh: string;
-  emoji: string;
-}[] = [
-  { key: 'kitchen', label: 'Kitchen',           label_zh: '廚房', emoji: '👨‍🍳' },
-  { key: 'bar',     label: 'Bar / Drinks',      label_zh: '水吧', emoji: '🫖' },
-  { key: 'cashier', label: 'Counter (Cashier)', label_zh: '收銀', emoji: '💰' },
-];
-
 // The three menu categories — one per printer.  Chinese labels stay visible
 // alongside the English so cooks and cashiers see both.  The order here is the
 // order shown in the POS and admin: Kitchen, Counter, Bar.
@@ -178,18 +167,6 @@ export type Payment = {
   created_at: string;
 };
 
-// 'kitchen'       — prep ticket for a station (kitchen / bar / counter)
-// 'order_summary' — customer copy of the whole order, printed at the cashier
-//                   when the order is first sent (no prices, preview only)
-// 'receipt'       — final itemised bill, printed at the cashier on payment
-export type PrintJobKind =
-  | 'kitchen'
-  | 'order_summary'
-  | 'receipt'
-  | 'void'
-  | 'refund'
-  | 'restock';
-
 export type RestockRequest = {
   id: number;
   menu_item_id: number;
@@ -223,16 +200,6 @@ export type OrderLog = {
   created_at: string;
 };
 
-export type PrintJob = {
-  id: number;
-  order_id: number | null;
-  kind: PrintJobKind;
-  station: PrintStation;
-  payload: Record<string, unknown> | null;
-  created_at: string;
-  printed_at: string | null;
-};
-
 // -------------------------------------------------------------------------
 // STAFF + PERMISSIONS
 // -------------------------------------------------------------------------
@@ -241,11 +208,6 @@ export type PrintJob = {
 //   staff  → everything except /admin/*
 //   admin  → everything
 export type StaffRole = 'staff' | 'admin';
-
-export const ROLE_LABELS: Record<StaffRole, { label: string; label_zh: string; emoji: string }> = {
-  staff: { label: 'Staff', label_zh: '員工', emoji: '👤' },
-  admin: { label: 'Admin', label_zh: '老闆', emoji: '👑' },
-};
 
 // -------------------------------------------------------------------------
 // EXPENSES

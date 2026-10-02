@@ -141,7 +141,7 @@ export default function ExpensesPage() {
   async function onDelete(id: number) {
     if (!confirm('Delete this entry? / 確定刪除嗎?')) return;
     try {
-      await deleteExpense(id, me.email ?? 'unknown');
+      await deleteExpense(id);
       await load();
     } catch (e: unknown) {
       setErr(extractMessage(e));
