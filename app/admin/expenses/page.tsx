@@ -312,7 +312,7 @@ function ExpenseRow({ row, onDelete }: { row: Expense; onDelete: () => void }) {
           </p>
         )}
         {row.note && (
-          <p className="text-xs text-[var(--ink-500)] mt-0.5 italic">"{row.note}"</p>
+          <p className="text-xs text-[var(--ink-500)] mt-0.5 italic">&ldquo;{row.note}&rdquo;</p>
         )}
         {pm && (
           <p className="text-xs text-[var(--ink-400)] mt-0.5">

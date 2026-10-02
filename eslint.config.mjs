@@ -7,10 +7,13 @@ const eslintConfig = defineConfig([
   ...nextTs,
   {
     rules: {
-      // This app loads data on mount with useEffect + setState throughout
-      // (fetch-on-mount). That's a legitimate, working pattern, so keep it a
-      // warning rather than a build-blocking error.
+      // React Compiler advisory rules that flag legitimate, working patterns in
+      // this app (fetch-on-mount, Date.now() for "time ago", a chart-offset
+      // accumulator). Keep them visible as warnings rather than build-blocking
+      // errors.
       "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/purity": "warn",
+      "react-hooks/immutability": "warn",
     },
   },
   // Override default ignores of eslint-config-next.

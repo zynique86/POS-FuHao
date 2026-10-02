@@ -739,7 +739,7 @@ function CartPanel({
                       )}
                       {l.note && (
                         <div className="text-[10px] text-[var(--ink-500)] italic mt-0.5">
-                          "{l.note}"
+                          &ldquo;{l.note}&rdquo;
                         </div>
                       )}
                       <StatusBadge status={l.kitchen_status} />
@@ -790,7 +790,7 @@ function CartPanel({
                   )}
                   {l.note && (
                     <p className="text-[10px] text-[var(--ink-500)] italic mt-0.5 truncate">
-                      "{l.note}"
+                      &ldquo;{l.note}&rdquo;
                     </p>
                   )}
                 </div>

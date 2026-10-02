@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { fetchSettings } from '@/lib/settings';
@@ -106,7 +107,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     <>
       <header className="sticky top-0 z-40 backdrop-blur bg-[var(--cream-50)]/85 border-b border-[var(--ink-200)]">
         <div className="max-w-[1600px] mx-auto flex items-center gap-3 px-3 md:px-6 h-14">
-          <a href="/" className="flex items-center gap-2 shrink-0">
+          <Link href="/" className="flex items-center gap-2 shrink-0">
             <span
               className="w-9 h-9 rounded-[10px] flex items-center justify-center text-xl shrink-0"
               style={{
@@ -125,7 +126,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                 {shop.nameZh}
               </span>
             </span>
-          </a>
+          </Link>
 
           {/* Nav pills — scroll horizontally when they don't fit */}
           <nav className="flex-1 flex items-center gap-1 overflow-x-auto no-scrollbar">
