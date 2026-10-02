@@ -55,13 +55,38 @@ const FS_AND    = Buffer.from([0x1C, 0x26]);  // enter Kanji mode
 const FS_DOT    = Buffer.from([0x1C, 0x2E]);  // exit Kanji mode
 const LF        = Buffer.from([0x0A]);
 
+// Broad CJK range (incl. full-width punctuation) used to STRIP Chinese when the
+// printer can't render it.
+const CJK_STRIP = /[⺀-鿿豈-﫿＀-￯]/g;
+
+// Many budget thermal printers (XPrinter and clones) do NOT render GB18030
+// Chinese — they print garbage bytes instead.  So by DEFAULT we print English
+// only: any Chinese in a string is stripped, leaving the readable Latin text
+// (e.g. "No chilli 不辣" -> "No chilli", "ALL DONE 完成" -> "ALL DONE").  This
+// guarantees the kitchen and the customer see the right words.  If your printer
+// genuinely supports Chinese, set PRINT_CHINESE=true in .env.
+const PRINT_CHINESE = process.env.PRINT_CHINESE === 'true';
+
 /**
- * Print a line that may contain Chinese/CJK characters.
- * Falls back to normal `println` if the text is ASCII-only.
+ * Print one line.  With PRINT_CHINESE off (default) any CJK is stripped so the
+ * English stays readable; with it on, CJK is sent as GB18030 in Kanji mode.
  */
 function say(printer, text) {
   if (text == null || text === '') { printer.newLine(); return; }
   const s = String(text);
+
+  if (!PRINT_CHINESE) {
+    let ascii = s.replace(CJK_STRIP, '');
+    ascii = ascii.replace(/ +([,.;:])/g, '$1');     // "chilli ," -> "chilli,"
+    ascii = ascii.replace(/(\S) {2,}/g, '$1 ');      // collapse inner runs, keep indent
+    ascii = ascii.replace(/[\s/·|]+$/g, '');         // drop dangling separators left by a stripped "/ 中文"
+    ascii = ascii.replace(/[ \t]+$/g, '');           // trim trailing spaces
+    // Nothing readable left (the line was pure Chinese) -> print nothing.
+    if (!/[A-Za-z0-9]/.test(ascii)) return;
+    printer.println(ascii);
+    return;
+  }
+
   if (!CJK_REGEX.test(s)) {
     printer.println(s);
     return;
@@ -102,7 +127,10 @@ function hasRealName(s) {
 // console-fallback text and (conceptually) mirror the on-printer tableCustom
 // columns, so the preview and the paper match.
 // ---------------------------------------------------------------------------
-const RECEIPT_WIDTH = 42;          // chars for console-fallback text
+// Characters per line.  80mm printers are usually 48, but many wrap the last
+// column off the edge, so we default to a safe 42 and let .env override it
+// (RECEIPT_WIDTH).  Used for BOTH the printer layout and the console fallback.
+const RECEIPT_WIDTH = Number(process.env.RECEIPT_WIDTH) || 42;
 const COL_L = 0.62;                // left column width (printer tableCustom)
 const COL_R = 0.38;                // right column width (printer tableCustom)
 
@@ -143,6 +171,15 @@ function amountRow(printer, label, value, bold = false) {
 function printExtras(printer, item) {
   if (item.options) say(printer, `   - ${item.options}`);
   if (item.note)    say(printer, `   - ${item.note}`);
+}
+
+// Feed several blank lines THEN cut.  The print head sits ~1-2cm above the
+// cutter, so without enough feed the last printed line ends up in that gap and
+// shows at the TOP of the next slip.  Feeding first clears it, so every ticket
+// starts clean.
+function finish(printer) {
+  for (let i = 0; i < 5; i++) printer.newLine();
+  printer.cut();
 }
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -207,6 +244,7 @@ function printerFor(station) {
     characterSet: 'PC437_USA',
     removeSpecialCharacters: false,
     lineCharacter: '-',
+    width: RECEIPT_WIDTH,  // columns per line — keeps the amount column on-paper
     options: {
       timeout: 15000,  // 15s — long enough for slow XPrinter + Wi-Fi
     },
@@ -364,9 +402,7 @@ async function handleKitchen(job, station) {
   say(printer, '[  ]  ALL DONE  完成');
   printer.setTextNormal();
   printer.bold(false);
-  printer.newLine();
-  printer.newLine();
-  printer.cut();
+  finish(printer);
   await executeWithRetry(printer, `${station} kitchen ticket`);
   console.log(`🖨️  ${station} ticket printed for order #${order.id} (${items.length} items)`);
 }
@@ -463,9 +499,7 @@ async function handleOrderSummary(job, station) {
   say(printer, '** NOT A RECEIPT **');
   printer.bold(false);
   say(printer, 'Final bill at cashier / 賬單以收銀為準');
-  printer.newLine();
-  printer.newLine();
-  printer.cut();
+  finish(printer);
 
   await executeWithRetry(printer, `customer copy`);
   console.log(`📋 Customer copy printed for order #${order.id} at ${station}`);
@@ -604,9 +638,7 @@ async function handleReceipt(job, station) {
   say(printer, 'Thank You! 多謝惠顧');
   printer.bold(false);
   say(printer, 'Please come again');
-  printer.newLine();
-  printer.newLine();
-  printer.cut();
+  finish(printer);
   await executeWithRetry(printer, `receipt`);
   console.log(`🖨️  Receipt printed for order #${order.id}${isReprint ? ' (reprint)' : ''}`);
 }
@@ -647,9 +679,7 @@ async function handleVoid(job, station) {
   say(printer, `${item.qty}x  ${item.name_snapshot}`);
   if (hasRealName(item.name_zh_snapshot)) say(printer, `     ${item.name_zh_snapshot}`);
   say(printer, `Reason: ${reason}`);
-  printer.newLine();
-  printer.newLine();
-  printer.cut();
+  finish(printer);
   await executeWithRetry(printer, `void ticket`);
   console.log(`🚫 VOID ticket printed for item #${item.id} at ${station}`);
 }
@@ -700,9 +730,7 @@ async function handleRefund(job, station) {
   say(printer, `Reason: ${reason}`);
   say(printer, `By: ${by}`);
   printer.drawLine();
-  printer.newLine();
-  printer.newLine();
-  printer.cut();
+  finish(printer);
   await executeWithRetry(printer, `refund slip`);
   console.log(`↩️  Refund slip printed for order #${order.id}`);
 }
@@ -756,9 +784,7 @@ async function handleRestock(job, station) {
   if (note) say(printer, `Note: ${note}`);
   if (by) printer.println(`By:   ${by}`);
   printer.drawLine();
-  printer.newLine();
-  printer.newLine();
-  printer.cut();
+  finish(printer);
   await executeWithRetry(printer, `restock slip`);
   console.log(`🔥 Restock slip printed for ${name} at ${station}`);
 }
