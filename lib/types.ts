@@ -203,6 +203,26 @@ export type RestockRequest = {
   fulfilled_by: string | null;
 };
 
+// -------------------------------------------------------------------------
+// ORDER ACTION LOG
+// -------------------------------------------------------------------------
+// Accountability trail for order-level actions any staff member can take:
+// removing a whole order, or moving it to a different table.  Each row
+// records who did it and why.
+export type OrderLogAction = 'remove_order' | 'change_table';
+
+export type OrderLog = {
+  id: number;
+  order_id: number | null;
+  table_number: number | null;
+  action: OrderLogAction;
+  reason: string;
+  actor_email: string | null;
+  actor_name: string | null;
+  details: Record<string, unknown> | null;  // e.g. { from_table, to_table }
+  created_at: string;
+};
+
 export type PrintJob = {
   id: number;
   order_id: number | null;

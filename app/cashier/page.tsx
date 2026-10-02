@@ -18,6 +18,7 @@ import {
   type Payment,
   type PayMethod,
 } from '@/lib/types';
+import { removeOrder, changeTable } from '@/lib/order-actions';
 
 type Order = BaseOrder & { items: OrderItem[]; payments: Payment[] };
 
@@ -29,6 +30,8 @@ type Screen =
   | { kind: 'void'; orderId: number; itemId: number }
   | { kind: 'refund'; orderId: number }
   | { kind: 'discount'; orderId: number }
+  | { kind: 'changeTable'; orderId: number }
+  | { kind: 'removeOrder'; orderId: number }
   | { kind: 'openShift' }
   | { kind: 'closeShift' };
 
@@ -49,6 +52,7 @@ export default function CashierPage() {
         .from('orders')
         .select('*')
         .is('paid_at', null)
+        .neq('status', 'void')       // removed orders drop off the unpaid list
         .order('created_at', { ascending: true }),
       supabase
         .from('orders')
@@ -199,6 +203,24 @@ export default function CashierPage() {
           }}
           onRefund={() => setScreen({ kind: 'refund', orderId: activeOrder.id })}
           onDiscount={() => setScreen({ kind: 'discount', orderId: activeOrder.id })}
+          onChangeTable={() => setScreen({ kind: 'changeTable', orderId: activeOrder.id })}
+          onRemoveOrder={() => setScreen({ kind: 'removeOrder', orderId: activeOrder.id })}
+        />
+      )}
+
+      {activeOrder && screen.kind === 'changeTable' && (
+        <ChangeTableModal
+          order={activeOrder}
+          onCancel={() => setScreen({ kind: 'menu', orderId: activeOrder.id })}
+          onDone={() => setScreen({ kind: 'closed' })}
+        />
+      )}
+
+      {activeOrder && screen.kind === 'removeOrder' && (
+        <RemoveOrderModal
+          order={activeOrder}
+          onCancel={() => setScreen({ kind: 'menu', orderId: activeOrder.id })}
+          onDone={() => setScreen({ kind: 'closed' })}
         />
       )}
 
@@ -636,6 +658,152 @@ function RefundModal({
   );
 }
 
+// ─── change table modal ───────────────────────────────────────────────────
+
+function ChangeTableModal({
+  order,
+  onCancel,
+  onDone,
+}: {
+  order: Order;
+  onCancel: () => void;
+  onDone: () => void;
+}) {
+  const [newTable, setNewTable] = useState<string>('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function confirm() {
+    const to = Number(newTable);
+    if (!Number.isFinite(to) || to < 1) return setErr('Enter a valid new table number');
+    if (to === order.table_number) return setErr('That is already this order’s table');
+    if (!reason.trim()) return setErr('Reason is required');
+    setBusy(true);
+    try {
+      await changeTable(order.id, order.table_number, to, reason.trim());
+      onDone();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Could not change table');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ModalShell onClose={onCancel} title="Change table" sub={`Order #${order.id}`}>
+      <div className="flex items-center justify-center gap-4 mb-5">
+        <div className="text-center">
+          <p className="text-[10px] uppercase tracking-widest text-[var(--ink-500)] font-semibold">From</p>
+          <p className="text-4xl font-bold font-mono text-[var(--ink-900)]">{order.table_number}</p>
+        </div>
+        <span className="text-2xl text-[var(--ink-400)]">→</span>
+        <div className="text-center">
+          <p className="text-[10px] uppercase tracking-widest text-[var(--ink-500)] font-semibold">To</p>
+          <input
+            type="number"
+            min={1}
+            value={newTable}
+            onChange={(e) => setNewTable(e.target.value)}
+            placeholder="?"
+            className="w-24 text-center font-mono text-4xl font-bold text-[var(--brand-700)] border-2 border-[var(--ink-200)] rounded-2xl py-1 focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+            autoFocus
+          />
+        </div>
+      </div>
+
+      <F label="Reason">
+        <input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. customer moved to a bigger table"
+          className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+        />
+      </F>
+
+      {err && (
+        <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] text-[var(--brand-700)] p-2 rounded-xl mb-4 text-sm">
+          {err}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <SecondaryBtn onClick={onCancel} disabled={busy}>Cancel</SecondaryBtn>
+        <PrimaryBtn onClick={confirm} disabled={busy}>
+          {busy ? 'Moving…' : 'Move order'}
+        </PrimaryBtn>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ─── remove order modal ───────────────────────────────────────────────────
+
+function RemoveOrderModal({
+  order,
+  onCancel,
+  onDone,
+}: {
+  order: Order;
+  onCancel: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const activeCount = order.items.filter((i) => !i.voided_at).length;
+
+  async function confirm() {
+    if (!reason.trim()) return setErr('Reason is required');
+    setBusy(true);
+    try {
+      await removeOrder(order.id, order.table_number, reason.trim());
+      onDone();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Could not remove order');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ModalShell onClose={onCancel} title="Remove order" sub={`Table ${order.table_number} · Order #${order.id}`}>
+      <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] rounded-2xl p-4 mb-4 text-center">
+        <p className="text-sm text-[var(--ink-700)]">
+          This removes the whole order ({activeCount} item{activeCount === 1 ? '' : 's'}) from the
+          cashier and the kitchen / bar screens. It cannot be undone.
+        </p>
+      </div>
+
+      <F label="Reason">
+        <input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. duplicate order, customer left"
+          className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+          autoFocus
+        />
+      </F>
+
+      {err && (
+        <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] text-[var(--brand-700)] p-2 rounded-xl mb-4 text-sm">
+          {err}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <SecondaryBtn onClick={onCancel} disabled={busy}>Cancel</SecondaryBtn>
+        <button
+          onClick={confirm}
+          disabled={busy}
+          className="w-full text-white font-bold py-3 rounded-2xl transition disabled:opacity-60"
+          style={{ background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))', boxShadow: 'var(--shadow-brand)' }}
+        >
+          {busy ? 'Removing…' : 'Remove order'}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
 function F({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block mb-3">
@@ -758,6 +926,8 @@ function OrderMenuModal({
   onReprint,
   onRefund,
   onDiscount,
+  onChangeTable,
+  onRemoveOrder,
 }: {
   order: Order;
   onClose: () => void;
@@ -767,6 +937,8 @@ function OrderMenuModal({
   onReprint: () => void;
   onRefund: () => void;
   onDiscount: () => void;
+  onChangeTable: () => void;
+  onRemoveOrder: () => void;
 }) {
   const isPaid = !!order.paid_at;
   const paidSoFar = order.payments.reduce((s, p) => s + Number(p.amount), 0);
@@ -847,6 +1019,15 @@ function OrderMenuModal({
               {Number(order.discount) > 0 ? 'Edit discount' : 'Discount'}
             </SecondaryBtn>
             <SecondaryBtn onClick={onSplit}>Split bill</SecondaryBtn>
+            <SecondaryBtn onClick={onChangeTable}>🔀 Change table</SecondaryBtn>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={onRemoveOrder}
+              className="w-full font-bold py-3 rounded-2xl transition text-[var(--brand-700)] bg-[var(--brand-50)] hover:bg-[var(--brand-100)] border border-[var(--brand-200)]"
+            >
+              🗑 Remove order
+            </button>
             <SecondaryBtn onClick={onClose}>Close</SecondaryBtn>
           </div>
         </div>
