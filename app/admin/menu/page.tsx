@@ -5,7 +5,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { AdminPageHeader, PrimaryBtn, SecondaryBtn, ErrorBanner, EmptyState } from '@/components/ui';
-import { SUGGESTED_MODIFIERS, MENU_CATEGORIES, type ItemModifier, type MenuItem, type PrintStation } from '@/lib/types';
+import { SUGGESTED_MODIFIERS, MENU_CATEGORIES, stationForCategory, type ItemModifier, type MenuItem, type PrintStation } from '@/lib/types';
+
+// Display metadata for the printer each category routes to.  Routing itself
+// lives in stationForCategory(); this is only for the admin badges/editor.
+const STATION_META: Record<PrintStation, { label: string; emoji: string; bg: string; fg: string }> = {
+  kitchen: { label: 'Kitchen 廚房',  emoji: '👨‍🍳', bg: 'var(--brand-50)',      fg: 'var(--brand-700)' },
+  cashier: { label: 'Cashier 前台',  emoji: '🧾',   bg: 'var(--gold-400)/15',   fg: 'var(--gold-600)' },
+  bar:     { label: 'Bar 水吧',      emoji: '🫖',   bg: 'rgb(6 95 70 / 0.15)',  fg: 'var(--jade-600)' },
+};
 
 type Draft = {
   id?: number;
@@ -26,11 +34,11 @@ const EMPTY: Draft = {
   price: '',
   image_url: '',
   options_available: [],
-  category: 'Dim Sum',
+  category: 'Counter',
   sort_order: '0',
   is_available: true,
   temporarily_disabled: false,
-  station: 'kitchen',
+  station: 'cashier',
 };
 
 export default function AdminMenuPage() {
@@ -91,7 +99,7 @@ export default function AdminMenuPage() {
   const grouped = useMemo(() => {
     const m = new Map<string, MenuItem[]>();
     for (const i of items) {
-      const c = i.category || 'Other';
+      const c = i.category || 'Counter';
       if (!m.has(c)) m.set(c, []);
       m.get(c)!.push(i);
     }
@@ -120,7 +128,7 @@ export default function AdminMenuPage() {
       price: String(item.price),
       image_url: item.image_url ?? '',
       options_available: Array.isArray(item.options_available) ? item.options_available : [],
-      category: item.category || 'Other',
+      category: item.category || 'Counter',
       sort_order: String(item.sort_order ?? 0),
       is_available: item.is_available !== false,
       temporarily_disabled: item.temporarily_disabled === true,
@@ -142,11 +150,13 @@ export default function AdminMenuPage() {
       price: priceNum,
       image_url: draft.image_url.trim() || null,
       options_available: draft.options_available,
-      category: draft.category.trim() || 'Other',
+      category: draft.category.trim() || 'Counter',
       sort_order: Number(draft.sort_order) || 0,
       is_available: draft.is_available,
       temporarily_disabled: draft.temporarily_disabled,
-      station: draft.station,
+      // Station is DERIVED from the category so it always matches the printer
+      // the item routes to (Noodles → kitchen, Drinks → bar, else → cashier).
+      station: stationForCategory(draft.category.trim() || 'Counter'),
     };
     const { error } = draft.id
       ? await supabase.from('menu_items').update(payload).eq('id', draft.id)
@@ -250,7 +260,7 @@ export default function AdminMenuPage() {
                       />
                     ) : (
                       <div className="w-12 h-12 rounded-xl bg-[var(--cream-100)] border border-[var(--ink-100)] flex items-center justify-center text-lg opacity-40">
-                        {item.station === 'bar' ? '🫖' : '🥟'}
+                        {STATION_META[stationForCategory(item.category)].emoji}
                       </div>
                     )}
                     <div className="flex-1 min-w-[200px]">
@@ -259,16 +269,17 @@ export default function AdminMenuPage() {
                         <div className="text-sm text-[var(--ink-500)]">{item.name_zh}</div>
                       )}
                     </div>
-                    <div
-                      className="text-[10px] px-2 py-1 rounded-lg font-bold uppercase tracking-widest"
-                      style={
-                        item.station === 'bar'
-                          ? { background: 'rgb(6 95 70 / 0.15)', color: 'var(--jade-600)' }
-                          : { background: 'var(--brand-50)', color: 'var(--brand-700)' }
-                      }
-                    >
-                      {item.station === 'bar' ? '🫖 Bar' : '👨‍🍳 Kitchen'}
-                    </div>
+                    {(() => {
+                      const meta = STATION_META[stationForCategory(item.category)];
+                      return (
+                        <div
+                          className="text-[10px] px-2 py-1 rounded-lg font-bold uppercase tracking-widest"
+                          style={{ background: meta.bg, color: meta.fg }}
+                        >
+                          {meta.emoji} {meta.label}
+                        </div>
+                      );
+                    })()}
                     <div className="font-mono text-[var(--brand-700)] font-semibold w-24 text-right">
                       RM {Number(item.price).toFixed(2)}
                     </div>
@@ -441,51 +452,23 @@ export default function AdminMenuPage() {
               </select>
             </Field>
 
-            <Field label="Prep station (which printer)">
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDraft({ ...draft, station: 'kitchen' })}
-                  className={`py-3 rounded-xl font-bold text-sm transition ${
-                    draft.station === 'kitchen'
-                      ? 'text-white'
-                      : 'bg-[var(--cream-100)] text-[var(--ink-700)] hover:bg-[var(--cream-200)]'
-                  }`}
-                  style={
-                    draft.station === 'kitchen'
-                      ? {
-                          background:
-                            'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
-                          boxShadow: 'var(--shadow-brand)',
-                        }
-                      : undefined
-                  }
-                >
-                  👨‍🍳 Kitchen · 廚房
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDraft({ ...draft, station: 'bar' })}
-                  className={`py-3 rounded-xl font-bold text-sm transition ${
-                    draft.station === 'bar'
-                      ? 'text-white'
-                      : 'bg-[var(--cream-100)] text-[var(--ink-700)] hover:bg-[var(--cream-200)]'
-                  }`}
-                  style={
-                    draft.station === 'bar'
-                      ? {
-                          background:
-                            'linear-gradient(135deg, var(--jade-500), var(--jade-600))',
-                          boxShadow: '0 10px 24px -8px rgb(5 150 105 / 0.35)',
-                        }
-                      : undefined
-                  }
-                >
-                  🫖 Bar · 水吧
-                </button>
-              </div>
+            <Field label="Prints at (set by category)">
+              {(() => {
+                const meta = STATION_META[stationForCategory(draft.category)];
+                return (
+                  <div
+                    className="flex items-center gap-2 py-3 px-4 rounded-xl font-bold text-sm"
+                    style={{ background: meta.bg, color: meta.fg }}
+                  >
+                    <span>{meta.emoji}</span>
+                    <span>{meta.label}</span>
+                    <span className="ml-auto text-xs font-normal opacity-70">auto</span>
+                  </div>
+                );
+              })()}
               <span className="text-xs text-[var(--ink-400)]">
-                Food goes to the kitchen printer; drinks go to the bar printer.
+                Noodles &amp; Fried → kitchen · Drinks → bar · everything else
+                (Counter Food) → cashier / front counter.
               </span>
             </Field>
 

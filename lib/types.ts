@@ -28,29 +28,35 @@ export type MenuItem = {
 export type PrintStation = 'kitchen' | 'bar' | 'cashier';
 
 // -------------------------------------------------------------------------
-// CATEGORY → STATION ROUTING
+// CATEGORY → STATION ROUTING  (three categories, one per printer)
 // -------------------------------------------------------------------------
-// Shop layout decides which printer prepares which food:
-//   • Noodles / Fried  → KITCHEN  (back-of-house prep station)
-//   • Drinks           → BAR      (water/drinks counter)
-//   • Everything else  → CASHIER  (dim sum, buns, rice, roasted meats, other
-//                                   — all sold at the front counter)
+// The whole menu is split into exactly three categories, each tied to one
+// printer — so assigning work to a station is just a matter of the category:
+//   • Noodles & Fried  → KITCHEN   (back-of-house prep station)
+//   • Counter Food     → CASHIER   (dim sum, buns, rice, roasted, etc. —
+//                                    everything plated at the front counter)
+//   • Drinks           → BAR       (water / drinks counter)
 //
-// This is the single source of truth for routing.  Both the POS (when
-// sending new orders) and the Void modal (when reversing an item) call
-// it, so a change here flows through automatically.  The `station` field
-// on `menu_items` is kept for admin display only; routing ignores it.
+// This is the single source of truth for routing.  The POS (new orders), the
+// Void modal (reversing an item) and the cashier all call it, so a change here
+// flows through automatically.  The `station` field on `menu_items` is kept in
+// sync with the category for display only; routing uses the category.
 export function stationForCategory(
   category: string | null | undefined
 ): PrintStation {
-  // Normalise so stray casing / spacing in the menu data can't misroute an
-  // item (e.g. "noodles ", "FRIED").
+  // Normalise so stray casing / spacing can't misroute an item.
   const c = (category || '').trim().toLowerCase();
-  // Noodles AND fried food are made at the back kitchen.  The shop keeps them
-  // under one "Noodles / Fried" category, but we also accept a standalone
-  // "Fried" category in case the menu is ever split in two.
-  if (c === 'noodles' || c === 'fried' || c === 'noodles / fried') return 'kitchen';
   if (c === 'drinks') return 'bar';
+  if (
+    c === 'noodles' ||
+    c === 'fried' ||
+    c === 'noodles & fried' ||
+    c === 'noodles / fried'
+  ) {
+    return 'kitchen';
+  }
+  // Counter food (and any legacy/unknown category) is sold at the front
+  // counter, so it prints at the cashier.
   return 'cashier';
 }
 
@@ -65,16 +71,13 @@ export const STATIONS: {
   { key: 'cashier', label: 'Counter (Cashier)', label_zh: '收銀', emoji: '💰' },
 ];
 
-// The seven menu categories per the client's spec.  Chinese labels stay
-// visible alongside the English so cooks and cashiers see both.
+// The three menu categories — one per printer.  Chinese labels stay visible
+// alongside the English so cooks and cashiers see both.  The order here is the
+// order shown in the POS and admin: Kitchen, Counter, Bar.
 export const MENU_CATEGORIES: { key: string; label: string; label_zh: string; emoji: string }[] = [
-  { key: 'Dim Sum',   label: 'Dim Sum',        label_zh: '點心', emoji: '🥟' },
-  { key: 'Buns',      label: 'Buns',           label_zh: '包點', emoji: '🫓' },
-  { key: 'Rice',      label: 'Rice',           label_zh: '飯類', emoji: '🍚' },
-  { key: 'Noodles',   label: 'Noodles / Fried',label_zh: '面 / 炒類', emoji: '🍜' },
-  { key: 'Drinks',    label: 'Drinks',         label_zh: '飲料', emoji: '🫖' },
-  { key: 'Roasted',   label: 'Roasted Meats',  label_zh: '燒味', emoji: '🍖' },
-  { key: 'Other',     label: 'Other',          label_zh: '其他', emoji: '🍽️' },
+  { key: 'Noodles', label: 'Noodles & Fried', label_zh: '面 / 炒類', emoji: '🍜' }, // → kitchen
+  { key: 'Counter', label: 'Counter Food',    label_zh: '前台食品', emoji: '🥟' }, // → cashier
+  { key: 'Drinks',  label: 'Drinks',          label_zh: '飲料',     emoji: '🫖' }, // → bar
 ];
 
 export type OrderItem = {

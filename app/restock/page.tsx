@@ -16,15 +16,16 @@ import {
   listPendingRestock,
   cancelRestock,
 } from '@/lib/restock';
-import type { MenuItem, RestockRequest, PrintStation } from '@/lib/types';
+import { MENU_CATEGORIES, type MenuItem, type RestockRequest } from '@/lib/types';
 
-type StationFilter = 'all' | 'kitchen' | 'bar';
+// The restock queue is filtered by the three menu categories.
+type CatFilter = 'all' | string;
 
 export default function RestockPage() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [pending, setPending] = useState<RestockRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<StationFilter>('all');
+  const [filter, setFilter] = useState<CatFilter>('all');
   const [restockFor, setRestockFor] = useState<MenuItem | null>(null);
   const [nowTick, setNowTick] = useState<number>(0);
 
@@ -82,17 +83,24 @@ export default function RestockPage() {
   const filteredItems = useMemo(() => {
     return items
       .filter((i) => i.is_available !== false)
-      .filter((i) => filter === 'all' || i.station === filter);
+      .filter((i) => filter === 'all' || (i.category || 'Counter') === filter);
   }, [items, filter]);
 
   const grouped = useMemo(() => {
     const m = new Map<string, MenuItem[]>();
     for (const i of filteredItems) {
-      const c = i.category || 'Other';
+      const c = i.category || 'Counter';
       if (!m.has(c)) m.set(c, []);
       m.get(c)!.push(i);
     }
-    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
+    const order = MENU_CATEGORIES.map((c) => c.key);
+    return [...m.entries()].sort(([a], [b]) => {
+      const ia = order.indexOf(a); const ib = order.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.localeCompare(b);
+    });
   }, [filteredItems]);
 
   async function cancel(id: number) {
@@ -108,17 +116,17 @@ export default function RestockPage() {
     return `${mins} min ago`;
   }
 
-  const counts = {
-    all: pending.length,
-    kitchen: pending.filter((p) => {
-      const it = items.find((i) => i.id === p.menu_item_id);
-      return (it?.station ?? 'kitchen') === 'kitchen';
-    }).length,
-    bar: pending.filter((p) => {
-      const it = items.find((i) => i.id === p.menu_item_id);
-      return it?.station === 'bar';
-    }).length,
-  };
+  // Count available items per category (for the number under each filter pill).
+  const counts = useMemo(() => {
+    const available = items.filter((i) => i.is_available !== false);
+    const c: Record<string, number> = { all: available.length };
+    for (const cat of MENU_CATEGORIES) c[cat.key] = 0;
+    for (const it of available) {
+      const k = it.category || 'Counter';
+      c[k] = (c[k] || 0) + 1;
+    }
+    return c;
+  }, [items]);
 
   return (
     <main className="min-h-[calc(100vh-56px)] max-w-[1600px] mx-auto px-4 md:px-6 py-6">
@@ -135,18 +143,22 @@ export default function RestockPage() {
           </p>
         </div>
 
-        {/* Station filter */}
-        <div className="flex gap-2 bg-white rounded-2xl p-1.5 border border-[var(--ink-200)]"
+        {/* Category filter */}
+        <div className="flex gap-2 bg-white rounded-2xl p-1.5 border border-[var(--ink-200)] overflow-x-auto no-scrollbar"
              style={{ boxShadow: 'var(--shadow-sm)' }}>
           <FilterPill active={filter === 'all'} onClick={() => setFilter('all')} count={counts.all}>
             All
           </FilterPill>
-          <FilterPill active={filter === 'kitchen'} onClick={() => setFilter('kitchen')} count={counts.kitchen}>
-            👨‍🍳 Kitchen
-          </FilterPill>
-          <FilterPill active={filter === 'bar'} onClick={() => setFilter('bar')} count={counts.bar}>
-            🫖 Bar
-          </FilterPill>
+          {MENU_CATEGORIES.map((c) => (
+            <FilterPill
+              key={c.key}
+              active={filter === c.key}
+              onClick={() => setFilter(c.key)}
+              count={counts[c.key] ?? 0}
+            >
+              {c.emoji} {c.label}
+            </FilterPill>
+          ))}
         </div>
       </header>
 
@@ -230,7 +242,7 @@ export default function RestockPage() {
         <div className="text-center py-20">
           <div className="text-6xl mb-3 opacity-40">🥟</div>
           <p className="text-lg text-[var(--ink-700)] font-semibold">
-            No items in this station
+            No items in this category
           </p>
           <p className="text-sm text-[var(--ink-500)] mt-1">
             Add items in Admin → Menu.
@@ -289,9 +301,10 @@ function ItemCard({
   onRequest: () => void;
 }) {
   const isPending = !!pending;
-  const stationLabel = item.station === 'bar' ? '🫖 Bar' : '👨‍🍳 Kitchen';
-  const stationColor =
-    item.station === 'bar' ? 'var(--jade-600)' : 'var(--brand-700)';
+  // Restock slips always print at the kitchen (the back kitchen makes all the
+  // batches), regardless of where the item is normally sold.
+  const stationLabel = '👨‍🍳 Kitchen';
+  const stationColor = 'var(--brand-700)';
 
   return (
     <button
@@ -432,12 +445,6 @@ function RestockModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const stationLabel: Record<PrintStation, string> = {
-    kitchen: '👨‍🍳 Kitchen · 廚房',
-    bar: '🫖 Bar · 水吧',
-    cashier: '💰 Cashier · 收銀',
-  };
-
   async function submit() {
     setBusy(true);
     setErr(null);
@@ -473,7 +480,7 @@ function RestockModal({
           </div>
           <h2 className="text-xl font-bold text-[var(--ink-900)]">Restock request</h2>
           <p className="text-sm text-[var(--ink-500)] mt-1">
-            Prints at {stationLabel[item.station] ?? 'kitchen'}
+            Prints at 👨‍🍳 Kitchen · 廚房
           </p>
         </div>
 

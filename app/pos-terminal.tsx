@@ -51,7 +51,6 @@ export default function POSTerminal({
   const [tableNo, setTableNo] = useState<number>(1);
   const [existing, setExisting] = useState<ExistingOrder | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [stationFilter, setStationFilter] = useState<'all' | 'kitchen' | 'bar'>('all');
   // Category filter for faster ordering — 'all' shows every category.
   // Any other value must match a MenuItem.category key exactly.
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -139,49 +138,33 @@ export default function POSTerminal({
         // Hide items that the owner marked "off menu" (is_available = false)
         // or that the shop toggled "sold out today" (temporarily_disabled = true).
         .filter((i) => i.is_available !== false && i.temporarily_disabled !== true)
-        .filter((i) => stationFilter === 'all' || i.station === stationFilter)
-        .filter((i) => categoryFilter === 'all' || (i.category || 'Other') === categoryFilter),
-    [items, stationFilter, categoryFilter]
+        .filter((i) => categoryFilter === 'all' || (i.category || 'Counter') === categoryFilter),
+    [items, categoryFilter]
   );
 
-  const stationCounts = useMemo(() => {
-    const available = items.filter(
-      (i) => i.is_available !== false && i.temporarily_disabled !== true
-    );
-    return {
-      all: available.length,
-      kitchen: available.filter((i) => i.station === 'kitchen').length,
-      bar: available.filter((i) => i.station === 'bar').length,
-    };
-  }, [items]);
-
-  // Per-category counts — one number under each category chip.  Reflects
-  // the current station filter so counts stay honest when you switch stations.
+  // Per-category counts — one number under each category chip.
   const categoryCounts = useMemo(() => {
     const available = items.filter(
-      (i) =>
-        i.is_available !== false &&
-        i.temporarily_disabled !== true &&
-        (stationFilter === 'all' || i.station === stationFilter)
+      (i) => i.is_available !== false && i.temporarily_disabled !== true
     );
     const counts: Record<string, number> = { all: available.length };
     for (const c of MENU_CATEGORIES) counts[c.key] = 0;
     for (const it of available) {
-      const k = it.category || 'Other';
+      const k = it.category || 'Counter';
       counts[k] = (counts[k] || 0) + 1;
     }
     return counts;
-  }, [items, stationFilter]);
+  }, [items]);
 
   const grouped = useMemo(() => {
     const m = new Map<string, MenuItem[]>();
     for (const i of visibleItems) {
-      const c = i.category || 'Other';
+      const c = i.category || 'Counter';
       if (!m.has(c)) m.set(c, []);
       m.get(c)!.push(i);
     }
-    // Sort sections in the seven-category order defined in lib/types
-    // (Dim Sum first, Other last), then any unrecognised keys.
+    // Sort sections in the category order defined in lib/types
+    // (Noodles, Counter, Drinks), then any unrecognised keys.
     const order = MENU_CATEGORIES.map((c) => c.key);
     return [...m.entries()].sort(([a], [b]) => {
       const ia = order.indexOf(a);
@@ -383,13 +366,12 @@ export default function POSTerminal({
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_400px] gap-6 mt-6">
         <section className="min-w-0">
-          {/* Sticky filter bar.  Two visual tiers so waiters know which
-              control they use most:
-                1. Category chips = primary (bigger, coloured accent)
-                2. Station chips  = secondary (small pill row on the side) */}
+          {/* Sticky filter bar.  One row of category chips — each category
+              maps to exactly one printer (Noodles & Fried → kitchen,
+              Counter Food → cashier, Drinks → bar). */}
           <div className="sticky top-14 z-10 -mx-4 md:-mx-6 px-4 md:px-6 py-3 bg-[var(--cream-50)]/90 backdrop-blur border-b border-[var(--ink-200)] mb-6">
 
-            {/* Row 1 — Category filter (primary) */}
+            {/* Category filter */}
             <div className="flex items-center gap-3 min-w-0">
               <span className="hidden md:inline text-[10px] uppercase tracking-widest text-[var(--ink-500)] font-bold shrink-0">
                 Category · 分類
@@ -423,18 +405,6 @@ export default function POSTerminal({
                     </FilterChip>
                   );
                 })}
-              </div>
-            </div>
-
-            {/* Row 2 — Station filter (secondary, subtler) */}
-            <div className="flex items-center gap-3 mt-2 pt-2 border-t border-[var(--ink-100)] min-w-0">
-              <span className="text-[10px] uppercase tracking-widest text-[var(--ink-500)] font-bold shrink-0">
-                Station · 站
-              </span>
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1 no-scrollbar flex-1 min-w-0">
-                <FilterChip active={stationFilter === 'all'}     onClick={() => setStationFilter('all')}     count={stationCounts.all}     variant="secondary">All</FilterChip>
-                <FilterChip active={stationFilter === 'kitchen'} onClick={() => setStationFilter('kitchen')} count={stationCounts.kitchen} variant="secondary">👨‍🍳 Kitchen</FilterChip>
-                <FilterChip active={stationFilter === 'bar'}     onClick={() => setStationFilter('bar')}     count={stationCounts.bar}     variant="secondary">🫖 Bar</FilterChip>
               </div>
             </div>
           </div>
@@ -624,16 +594,6 @@ function FilterChip({
       </span>
     </button>
   );
-}
-
-// Kept for compatibility with any other place the old name is used.
-function StationPill(props: {
-  active: boolean;
-  onClick: () => void;
-  count: number;
-  children: React.ReactNode;
-}) {
-  return <FilterChip {...props} variant="primary" />;
 }
 
 function MenuButton({ item, onAdd }: { item: MenuItem; onAdd: () => void }) {

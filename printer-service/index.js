@@ -734,8 +734,8 @@ module.exports = {
   handleRestock,
   stationForCategory: (category) => {
     const c = (category || '').trim().toLowerCase();
-    if (c === 'noodles' || c === 'fried' || c === 'noodles / fried') return 'kitchen';
     if (c === 'drinks') return 'bar';
+    if (c === 'noodles' || c === 'fried' || c === 'noodles & fried' || c === 'noodles / fried') return 'kitchen';
     return 'cashier';
   },
   __setTestClient,
