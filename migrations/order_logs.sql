@@ -12,7 +12,7 @@ create table if not exists order_logs (
   id            bigserial primary key,
   order_id      bigint,
   table_number  int,
-  action        text not null,          -- 'remove_order' | 'change_table'
+  action        text not null,          -- 'remove_order' | 'change_table' | 'remove_item'
   reason        text not null,
   actor_email   text,
   actor_name    text,
@@ -31,7 +31,7 @@ alter table order_logs add column if not exists created_at   timestamptz not nul
 
 alter table order_logs drop constraint if exists order_logs_action_check;
 alter table order_logs add constraint order_logs_action_check
-  check (action in ('remove_order', 'change_table'));
+  check (action in ('remove_order', 'change_table', 'remove_item'));
 
 create index if not exists order_logs_date_idx   on order_logs (created_at desc);
 create index if not exists order_logs_order_idx  on order_logs (order_id, created_at desc);

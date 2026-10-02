@@ -2,12 +2,10 @@
 
 // Dedicated restock page — front-counter view.
 //
-// Shows every menu item as a big tap target for "request restock".
-// Also lists all currently-pending requests with time-since and a
-// cancel action, so nothing gets lost.
-//
-// Separate from the POS so the waiter's ordering flow stays fast and
-// uncluttered.
+// Restock is ONLY for front-counter food (dim sum, buns, rice, roasted, etc.).
+// Noodles & Fried are made to order, and Drinks are stocked by the bar — neither
+// goes through this flow — so this page only lists Counter Food items.  Tapping
+// one requests a fresh batch; the slip always prints at the kitchen.
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -16,20 +14,16 @@ import {
   listPendingRestock,
   cancelRestock,
 } from '@/lib/restock';
-import { MENU_CATEGORIES, type MenuItem, type RestockRequest } from '@/lib/types';
-
-// The restock queue is filtered by the three menu categories.
-type CatFilter = 'all' | string;
+import { stationForCategory, type MenuItem, type RestockRequest } from '@/lib/types';
 
 export default function RestockPage() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [pending, setPending] = useState<RestockRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<CatFilter>('all');
   const [restockFor, setRestockFor] = useState<MenuItem | null>(null);
   const [nowTick, setNowTick] = useState<number>(0);
 
-  // "Time ago" ticker without touching Date.now() in render.
+  // "Time ago" ticker.
   useEffect(() => {
     setNowTick(Date.now());
     const t = setInterval(() => setNowTick(Date.now()), 30_000);
@@ -40,7 +34,6 @@ export default function RestockPage() {
     const { data } = await supabase
       .from('menu_items')
       .select('*')
-      .order('station')
       .order('category')
       .order('sort_order')
       .order('id');
@@ -58,16 +51,8 @@ export default function RestockPage() {
     boot();
     const channel = supabase
       .channel('restock-page')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'restock_requests' },
-        () => loadPending()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'menu_items' },
-        () => loadItems()
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'restock_requests' }, () => loadPending())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, () => loadItems())
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -80,28 +65,14 @@ export default function RestockPage() {
     return m;
   }, [pending]);
 
-  const filteredItems = useMemo(() => {
-    return items
-      .filter((i) => i.is_available !== false)
-      .filter((i) => filter === 'all' || (i.category || 'Counter') === filter);
-  }, [items, filter]);
-
-  const grouped = useMemo(() => {
-    const m = new Map<string, MenuItem[]>();
-    for (const i of filteredItems) {
-      const c = i.category || 'Counter';
-      if (!m.has(c)) m.set(c, []);
-      m.get(c)!.push(i);
-    }
-    const order = MENU_CATEGORIES.map((c) => c.key);
-    return [...m.entries()].sort(([a], [b]) => {
-      const ia = order.indexOf(a); const ib = order.indexOf(b);
-      if (ia !== -1 && ib !== -1) return ia - ib;
-      if (ia !== -1) return -1;
-      if (ib !== -1) return 1;
-      return a.localeCompare(b);
-    });
-  }, [filteredItems]);
+  // Counter food only — everything except Noodles & Fried (kitchen) and Drinks (bar).
+  const counterItems = useMemo(
+    () =>
+      items.filter(
+        (i) => i.is_available !== false && stationForCategory(i.category) === 'cashier'
+      ),
+    [items]
+  );
 
   async function cancel(id: number) {
     if (!confirm('Cancel this restock request?')) return;
@@ -116,163 +87,109 @@ export default function RestockPage() {
     return `${mins} min ago`;
   }
 
-  // Count available items per category (for the number under each filter pill).
-  const counts = useMemo(() => {
-    const available = items.filter((i) => i.is_available !== false);
-    const c: Record<string, number> = { all: available.length };
-    for (const cat of MENU_CATEGORIES) c[cat.key] = 0;
-    for (const it of available) {
-      const k = it.category || 'Counter';
-      c[k] = (c[k] || 0) + 1;
-    }
-    return c;
-  }, [items]);
-
   return (
-    <main className="min-h-[calc(100vh-56px)] max-w-[1600px] mx-auto px-4 md:px-6 py-6">
-      <header className="flex flex-wrap items-end justify-between gap-4 mb-6">
-        <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]">
-            Front counter · 前檯
-          </p>
-          <h1 className="text-3xl md:text-4xl font-bold text-[var(--ink-900)] mt-1">
-            Restock
+    <main className="min-h-[calc(100vh-56px)] max-w-[1600px] mx-auto px-4 md:px-6 py-5 md:py-6">
+      <header className="mb-5 md:mb-6">
+        <p className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]">
+          Front counter · 前檯
+        </p>
+        <div className="flex flex-wrap items-end justify-between gap-2 mt-1">
+          <h1 className="text-2xl md:text-4xl font-bold text-[var(--ink-900)]">
+            Restock <span className="text-[var(--ink-500)] font-normal text-lg md:text-2xl">· 補貨</span>
           </h1>
-          <p className="text-sm text-[var(--ink-500)] mt-1">
-            Ran out of something? Tap it — a slip prints at the right station.
-          </p>
+          <span className="text-xs text-[var(--ink-400)]">
+            {counterItems.length} counter item{counterItems.length === 1 ? '' : 's'}
+          </span>
         </div>
-
-        {/* Category filter */}
-        <div className="flex gap-2 bg-white rounded-2xl p-1.5 border border-[var(--ink-200)] overflow-x-auto no-scrollbar"
-             style={{ boxShadow: 'var(--shadow-sm)' }}>
-          <FilterPill active={filter === 'all'} onClick={() => setFilter('all')} count={counts.all}>
-            All
-          </FilterPill>
-          {MENU_CATEGORIES.map((c) => (
-            <FilterPill
-              key={c.key}
-              active={filter === c.key}
-              onClick={() => setFilter(c.key)}
-              count={counts[c.key] ?? 0}
-            >
-              {c.emoji} {c.label}
-            </FilterPill>
-          ))}
-        </div>
+        <p className="text-sm text-[var(--ink-500)] mt-1">
+          Ran out of a dim sum / bun / rice dish? Tap it — a slip prints at the kitchen.
+        </p>
       </header>
 
-      {/* Pending requests block */}
+      {/* Pending requests */}
       {pending.length > 0 && (
-        <section className="mb-8">
+        <section className="mb-6 md:mb-8">
           <div
-            className="rounded-3xl overflow-hidden border-2"
-            style={{
-              borderColor: 'var(--warn-500)',
-              boxShadow: '0 12px 28px -8px rgb(234 88 12 / 0.25)',
-            }}
+            className="rounded-2xl md:rounded-3xl overflow-hidden border-2"
+            style={{ borderColor: 'var(--warn-500)', boxShadow: '0 12px 28px -8px rgb(234 88 12 / 0.25)' }}
           >
             <div
-              className="flex items-center justify-between px-5 py-3 text-white"
-              style={{
-                background: 'linear-gradient(90deg, var(--warn-500), var(--brand-700))',
-              }}
+              className="flex items-center justify-between px-4 md:px-5 py-3 text-white"
+              style={{ background: 'linear-gradient(90deg, var(--warn-500), var(--brand-700))' }}
             >
-              <div className="flex items-center gap-3">
-                <span className="relative flex h-2.5 w-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
                   <span className="absolute inline-flex h-full w-full rounded-full bg-white opacity-70 animate-ping" />
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
                 </span>
-                <h2 className="text-sm font-bold uppercase tracking-widest">
+                <h2 className="text-xs md:text-sm font-bold uppercase tracking-widest truncate">
                   Pending — waiting on kitchen
                 </h2>
               </div>
-              <span className="text-sm font-bold font-mono">{pending.length}</span>
+              <span className="text-sm font-bold font-mono shrink-0">{pending.length}</span>
             </div>
-            <ul className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-white">
-              {pending
-                .filter((p) => {
-                  if (filter === 'all') return true;
-                  const it = items.find((i) => i.id === p.menu_item_id);
-                  const st = it?.station ?? 'kitchen';
-                  return st === filter;
-                })
-                .map((r) => (
-                  <li
-                    key={r.id}
-                    className="rounded-2xl p-4 flex items-start gap-3 bg-[var(--cream-100)] border border-[var(--cream-300)]"
+            <ul className="p-3 md:p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-white">
+              {pending.map((r) => (
+                <li
+                  key={r.id}
+                  className="rounded-2xl p-3 md:p-4 flex items-start gap-3 bg-[var(--cream-100)] border border-[var(--cream-300)]"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-[var(--ink-900)] leading-tight truncate">
+                      {r.item_name_snapshot}
+                    </p>
+                    {r.item_name_zh_snapshot && (
+                      <p className="text-sm text-[var(--ink-600)] truncate">{r.item_name_zh_snapshot}</p>
+                    )}
+                    <p className="text-xs text-[var(--warn-500)] font-semibold mt-1">
+                      {r.qty_wanted ? `${r.qty_wanted} baskets · ` : ''}
+                      {ageOf(r.requested_at)}
+                    </p>
+                    {r.note && (
+                      <p className="text-xs mt-1.5 px-2 py-1 rounded bg-white text-[var(--ink-700)] break-words">
+                        {r.note}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => cancel(r.id)}
+                    className="shrink-0 text-xs px-3 py-2 rounded-lg bg-white border border-[var(--ink-200)] text-[var(--ink-600)] hover:border-[var(--brand-400)] hover:text-[var(--brand-700)] font-bold"
                   >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-lg font-bold text-[var(--ink-900)] leading-tight">
-                        {r.item_name_snapshot}
-                      </p>
-                      {r.item_name_zh_snapshot && (
-                        <p className="text-sm text-[var(--ink-600)]">
-                          {r.item_name_zh_snapshot}
-                        </p>
-                      )}
-                      <p className="text-xs text-[var(--warn-500)] font-semibold mt-1">
-                        {r.qty_wanted ? `${r.qty_wanted} baskets · ` : ''}
-                        {ageOf(r.requested_at)}
-                      </p>
-                      {r.note && (
-                        <p className="text-xs mt-1.5 px-2 py-1 rounded bg-white text-[var(--ink-700)]">
-                          {r.note}
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => cancel(r.id)}
-                      className="shrink-0 text-xs px-3 py-2 rounded-lg bg-white border border-[var(--ink-200)] text-[var(--ink-600)] hover:border-[var(--brand-400)] hover:text-[var(--brand-700)] font-bold"
-                    >
-                      Cancel
-                    </button>
-                  </li>
-                ))}
+                    Cancel
+                  </button>
+                </li>
+              ))}
             </ul>
           </div>
         </section>
       )}
 
-      {loading && (
-        <p className="text-[var(--ink-500)]">Loading menu…</p>
-      )}
+      {loading && <p className="text-[var(--ink-500)]">Loading menu…</p>}
 
-      {!loading && grouped.length === 0 && (
-        <div className="text-center py-20">
-          <div className="text-6xl mb-3 opacity-40">🥟</div>
-          <p className="text-lg text-[var(--ink-700)] font-semibold">
-            No items in this category
-          </p>
+      {!loading && counterItems.length === 0 && (
+        <div className="text-center py-16 md:py-20">
+          <div className="text-5xl md:text-6xl mb-3 opacity-40">🥟</div>
+          <p className="text-lg text-[var(--ink-700)] font-semibold">No counter food yet</p>
           <p className="text-sm text-[var(--ink-500)] mt-1">
-            Add items in Admin → Menu.
+            Add items in the <b>Counter Food</b> category under Admin → Menu.
           </p>
         </div>
       )}
 
-      {/* Menu items grid — big tap targets for restock requests */}
-      <div className="space-y-6">
-        {grouped.map(([category, list]) => (
-          <section key={category}>
-            <h2 className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold mb-3">
-              {category}
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {list.map((item) => (
-                <ItemCard
-                  key={item.id}
-                  item={item}
-                  pending={pendingByItemId.get(item.id) ?? null}
-                  ageLabel={
-                    pendingByItemId.get(item.id)
-                      ? ageOf(pendingByItemId.get(item.id)!.requested_at)
-                      : ''
-                  }
-                  onRequest={() => setRestockFor(item)}
-                />
-              ))}
-            </div>
-          </section>
+      {/* Items — responsive grid of big tap targets */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2.5 md:gap-3">
+        {counterItems.map((item) => (
+          <ItemCard
+            key={item.id}
+            item={item}
+            pending={pendingByItemId.get(item.id) ?? null}
+            ageLabel={
+              pendingByItemId.get(item.id)
+                ? ageOf(pendingByItemId.get(item.id)!.requested_at)
+                : ''
+            }
+            onRequest={() => setRestockFor(item)}
+          />
         ))}
       </div>
 
@@ -301,24 +218,17 @@ function ItemCard({
   onRequest: () => void;
 }) {
   const isPending = !!pending;
-  // Restock slips always print at the kitchen (the back kitchen makes all the
-  // batches), regardless of where the item is normally sold.
-  const stationLabel = '👨‍🍳 Kitchen';
-  const stationColor = 'var(--brand-700)';
 
   return (
     <button
       onClick={onRequest}
-      className={`card-hover text-left rounded-2xl border transition overflow-hidden ${
-        isPending
-          ? 'border-transparent'
-          : 'bg-white border-[var(--ink-200)]'
+      className={`card-hover text-left rounded-2xl border transition overflow-hidden flex flex-col ${
+        isPending ? 'border-transparent' : 'bg-white border-[var(--ink-200)]'
       }`}
       style={
         isPending
           ? {
-              background:
-                'linear-gradient(135deg, var(--warn-500), var(--brand-700))',
+              background: 'linear-gradient(135deg, var(--warn-500), var(--brand-700))',
               color: 'white',
               boxShadow: '0 12px 24px -8px rgb(234 88 12 / 0.35)',
             }
@@ -335,96 +245,34 @@ function ItemCard({
           />
         </div>
       )}
-      <div className="p-4">
-      <div className="flex items-baseline justify-between mb-2">
-        <span
-          className="text-[10px] uppercase tracking-widest font-bold"
-          style={{ color: isPending ? 'rgb(255 255 255 / 0.75)' : stationColor }}
-        >
-          {stationLabel}
-        </span>
-        {isPending && (
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-white opacity-70 animate-ping" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
-          </span>
-        )}
-      </div>
-      <p className={`font-bold leading-tight ${isPending ? 'text-white' : 'text-[var(--ink-900)]'}`}>
-        {item.name_en}
-      </p>
-      {item.name_zh && (
-        <p className={`text-sm ${isPending ? 'text-white/80' : 'text-[var(--ink-500)]'}`}>
-          {item.name_zh}
+      <div className="p-3 md:p-4 flex-1 flex flex-col">
+        <p className={`font-bold leading-tight text-sm md:text-base line-clamp-2 ${isPending ? 'text-white' : 'text-[var(--ink-900)]'}`}>
+          {item.name_en}
         </p>
-      )}
-      <div className="mt-3">
-        {isPending ? (
-          <div className="flex items-center gap-2 text-xs font-bold text-white">
-            <span>🔥 Restocking</span>
-            {ageLabel && <span className="text-white/70 font-normal">· {ageLabel}</span>}
-          </div>
-        ) : (
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-[var(--ink-400)]">Tap to request</span>
-            <span
-              className="text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center text-white"
-              style={{
-                background:
-                  'linear-gradient(135deg, var(--warn-500), var(--brand-600))',
-              }}
-            >
-              🔥
-            </span>
-          </div>
+        {item.name_zh && (
+          <p className={`text-xs md:text-sm line-clamp-1 ${isPending ? 'text-white/80' : 'text-[var(--ink-500)]'}`}>
+            {item.name_zh}
+          </p>
         )}
+        <div className="mt-2.5 md:mt-3">
+          {isPending ? (
+            <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+              <span>🔥 Restocking</span>
+              {ageLabel && <span className="text-white/70 font-normal hidden sm:inline">· {ageLabel}</span>}
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] md:text-xs text-[var(--ink-400)]">Tap to request</span>
+              <span
+                className="text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center text-white shrink-0"
+                style={{ background: 'linear-gradient(135deg, var(--warn-500), var(--brand-600))' }}
+              >
+                🔥
+              </span>
+            </div>
+          )}
+        </div>
       </div>
-      </div>
-    </button>
-  );
-}
-
-// ─── filter pill ──────────────────────────────────────────────────────────
-
-function FilterPill({
-  active,
-  onClick,
-  count,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  count: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition ${
-        active
-          ? 'text-white'
-          : 'text-[var(--ink-700)] hover:bg-[var(--cream-100)]'
-      }`}
-      style={
-        active
-          ? {
-              background:
-                'linear-gradient(135deg, var(--brand-600), var(--brand-800))',
-              boxShadow: 'var(--shadow-brand)',
-            }
-          : undefined
-      }
-    >
-      {children}
-      {count > 0 && (
-        <span
-          className={`ml-2 text-[10px] font-mono px-1.5 py-0.5 rounded ${
-            active ? 'bg-white/20' : 'bg-[var(--warn-500)] text-white'
-          }`}
-        >
-          {count}
-        </span>
-      )}
     </button>
   );
 }
@@ -455,8 +303,7 @@ function RestockModal({
       await requestRestock(item, q, note, by);
       onDone();
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Failed to request';
-      setErr(msg);
+      setErr(e instanceof Error ? e.message : 'Failed to request');
       setBusy(false);
     }
   }
@@ -467,7 +314,7 @@ function RestockModal({
       onClick={onCancel}
     >
       <div
-        className="bg-white rounded-3xl max-w-sm w-full p-6 animate-rise"
+        className="bg-white rounded-3xl max-w-sm w-full p-5 md:p-6 max-h-[95vh] overflow-y-auto animate-rise"
         onClick={(e) => e.stopPropagation()}
         style={{ boxShadow: 'var(--shadow-lg)' }}
       >
@@ -479,16 +326,12 @@ function RestockModal({
             <span className="text-white">🔥</span>
           </div>
           <h2 className="text-xl font-bold text-[var(--ink-900)]">Restock request</h2>
-          <p className="text-sm text-[var(--ink-500)] mt-1">
-            Prints at 👨‍🍳 Kitchen · 廚房
-          </p>
+          <p className="text-sm text-[var(--ink-500)] mt-1">Prints at 👨‍🍳 Kitchen · 廚房</p>
         </div>
 
         <div className="bg-[var(--cream-100)] rounded-2xl p-4 mb-4 text-center">
           <p className="text-lg font-bold text-[var(--ink-900)]">{item.name_en}</p>
-          {item.name_zh && (
-            <p className="text-sm text-[var(--ink-500)]">{item.name_zh}</p>
-          )}
+          {item.name_zh && <p className="text-sm text-[var(--ink-500)]">{item.name_zh}</p>}
         </div>
 
         <label className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-1.5 font-semibold">

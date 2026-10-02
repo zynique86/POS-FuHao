@@ -53,45 +53,55 @@ export default function OrderLogsPage() {
 }
 
 function LogRow({ log }: { log: OrderLog }) {
-  const isRemove = log.action === 'remove_order';
   const when = new Date(log.created_at).toLocaleString('en-MY');
   const from = (log.details?.from_table as number | string | undefined) ?? '?';
   const to = (log.details?.to_table as number | string | undefined) ?? '?';
+  const itemName = log.details?.item_name as string | undefined;
+  const itemQty = log.details?.qty as number | undefined;
+
+  const badge =
+    log.action === 'remove_order'
+      ? { label: '🗑 Order removed', bg: 'var(--brand-50)', fg: 'var(--brand-700)' }
+      : log.action === 'remove_item'
+      ? { label: '✕ Item removed', bg: 'var(--brand-50)', fg: 'var(--brand-700)' }
+      : { label: '🔀 Table change', bg: 'var(--gold-400)/15', fg: 'var(--gold-600)' };
 
   return (
     <div
-      className="bg-white rounded-2xl border border-[var(--ink-200)] p-4 flex flex-wrap items-center gap-x-4 gap-y-2"
+      className="bg-white rounded-2xl border border-[var(--ink-200)] p-3.5 md:p-4"
       style={{ boxShadow: 'var(--shadow-sm)' }}
     >
-      <span
-        className="text-[10px] px-2 py-1 rounded-lg font-bold uppercase tracking-widest shrink-0"
-        style={
-          isRemove
-            ? { background: 'var(--brand-50)', color: 'var(--brand-700)' }
-            : { background: 'var(--gold-400)/15', color: 'var(--gold-600)' }
-        }
-      >
-        {isRemove ? '🗑 Removed' : '🔀 Table change'}
-      </span>
-
-      <div className="min-w-0 flex-1">
-        <p className="text-sm text-[var(--ink-900)] font-semibold">
-          Order #{log.order_id ?? '—'}
-          {isRemove ? (
-            <span className="text-[var(--ink-500)] font-normal"> · Table {log.table_number ?? '—'}</span>
-          ) : (
-            <span className="text-[var(--ink-500)] font-normal"> · Table {from} → {to}</span>
-          )}
-        </p>
-        <p className="text-sm text-[var(--ink-600)]">“{log.reason}”</p>
+      {/* Top line: badge + who/when (who/when wraps under on phone) */}
+      <div className="flex items-start justify-between gap-2 mb-1.5">
+        <span
+          className="text-[10px] px-2 py-1 rounded-lg font-bold uppercase tracking-widest shrink-0"
+          style={{ background: badge.bg, color: badge.fg }}
+        >
+          {badge.label}
+        </span>
+        <div className="text-right min-w-0">
+          <p className="text-xs md:text-sm font-semibold text-[var(--ink-800)] truncate">
+            {log.actor_name || log.actor_email || 'unknown'}
+          </p>
+          <p className="text-[11px] text-[var(--ink-400)] font-mono">{when}</p>
+        </div>
       </div>
 
-      <div className="text-right shrink-0">
-        <p className="text-sm font-semibold text-[var(--ink-800)]">
-          {log.actor_name || log.actor_email || 'unknown'}
+      {/* Body */}
+      <p className="text-sm text-[var(--ink-900)] font-semibold">
+        Order #{log.order_id ?? '—'}
+        {log.action === 'change_table' ? (
+          <span className="text-[var(--ink-500)] font-normal"> · Table {from} → {to}</span>
+        ) : (
+          <span className="text-[var(--ink-500)] font-normal"> · Table {log.table_number ?? '—'}</span>
+        )}
+      </p>
+      {log.action === 'remove_item' && itemName && (
+        <p className="text-sm text-[var(--ink-700)]">
+          {itemQty ? `${itemQty}× ` : ''}{itemName}
         </p>
-        <p className="text-[11px] text-[var(--ink-400)] font-mono">{when}</p>
-      </div>
+      )}
+      <p className="text-sm text-[var(--ink-600)] break-words">“{log.reason}”</p>
     </div>
   );
 }

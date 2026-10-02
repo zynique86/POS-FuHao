@@ -186,7 +186,7 @@ export type RestockRequest = {
 // Accountability trail for order-level actions any staff member can take:
 // removing a whole order, or moving it to a different table.  Each row
 // records who did it and why.
-export type OrderLogAction = 'remove_order' | 'change_table';
+export type OrderLogAction = 'remove_order' | 'change_table' | 'remove_item';
 
 export type OrderLog = {
   id: number;

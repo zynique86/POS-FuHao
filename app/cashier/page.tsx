@@ -18,7 +18,7 @@ import {
   type Payment,
   type PayMethod,
 } from '@/lib/types';
-import { removeOrder, changeTable } from '@/lib/order-actions';
+import { removeOrder, changeTable, logItemRemoval } from '@/lib/order-actions';
 
 type Order = BaseOrder & { items: OrderItem[]; payments: Payment[] };
 
@@ -971,7 +971,7 @@ function OrderMenuModal({
                   onClick={() => onVoidItem(i.id)}
                   className="text-[10px] px-2 py-1 rounded-lg bg-[var(--brand-50)] text-[var(--brand-700)] hover:bg-[var(--brand-100)] font-bold uppercase tracking-wider shrink-0"
                 >
-                  Void
+                  Remove
                 </button>
               )}
             </li>
@@ -1307,10 +1307,14 @@ function VoidModal({
   const item = order.items.find((i) => i.id === itemId);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   if (!item) return null;
 
   async function confirm() {
+    if (!reason.trim()) return setErr('Reason is required');
+    if (!item) return;
     setBusy(true);
+    setErr(null);
     const { data: userRes } = await supabase.auth.getUser();
     const by = userRes?.user?.email ?? 'staff';
 
@@ -1318,12 +1322,12 @@ function VoidModal({
       .from('order_items')
       .update({
         voided_at: new Date().toISOString(),
-        void_reason: reason || 'no reason given',
+        void_reason: reason.trim(),
         voided_by: by,
       })
       .eq('id', itemId);
     if (voidErr) {
-      alert('Void failed: ' + voidErr.message);
+      alert('Remove failed: ' + voidErr.message);
       setBusy(false);
       return;
     }
@@ -1365,38 +1369,50 @@ function VoidModal({
       order_id: order.id,
       kind: 'void',
       station: voidStation,
-      payload: { item_id: itemId, reason: reason || 'no reason given' },
+      payload: { item_id: itemId, reason: reason.trim() },
     });
+
+    // Record who removed which item + why in the shared order log.
+    await logItemRemoval(order.id, order.table_number, item.name_snapshot, item.qty, reason.trim());
 
     setBusy(false);
     onDone();
   }
 
   return (
-    <ModalShell onClose={onCancel} title="Void item" sub={`Table ${order.table_number}`}>
+    <ModalShell onClose={onCancel} title="Remove item" sub={`Table ${order.table_number} · Order #${order.id}`}>
       <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] rounded-2xl p-4 mb-4">
         <p className="text-[var(--ink-800)]">
           <span className="font-mono text-[var(--ink-500)]">{item.qty}×</span>{' '}
           <span className="font-semibold">{item.name_snapshot}</span>
           {item.name_zh_snapshot && <span className="text-[var(--ink-500)]"> · {item.name_zh_snapshot}</span>}
         </p>
+        <p className="text-xs text-[var(--ink-500)] mt-1">
+          Removes just this item and updates the bill. The station is notified.
+        </p>
       </div>
 
       <label className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-2 font-semibold">
-        Reason (kitchen will see)
+        Reason (required — kitchen / bar will see)
       </label>
       <input
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         placeholder="e.g. wrong order, customer changed mind"
-        className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl mb-5 focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+        className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl mb-4 focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
         autoFocus
       />
+
+      {err && (
+        <div className="bg-[var(--brand-50)] border border-[var(--brand-100)] text-[var(--brand-700)] p-2 rounded-xl mb-4 text-sm">
+          {err}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <SecondaryBtn onClick={onCancel} disabled={busy}>Cancel</SecondaryBtn>
         <PrimaryBtn onClick={confirm} disabled={busy}>
-          {busy ? 'Voiding…' : 'Confirm void'}
+          {busy ? 'Removing…' : 'Remove item'}
         </PrimaryBtn>
       </div>
     </ModalShell>

@@ -81,6 +81,31 @@ export async function changeTable(
   if (logErr) console.error('order_logs insert (change_table) failed:', logErr.message);
 }
 
+/**
+ * Log that a single item was removed (voided) from an order.  The void itself
+ * (marking the item, recalculating totals, printing the void slip) is handled by
+ * the caller; this just records who/why in the shared order log.
+ */
+export async function logItemRemoval(
+  orderId: number,
+  tableNumber: number | null,
+  itemName: string,
+  qty: number,
+  reason: string
+): Promise<void> {
+  const me = await getCurrentUser();
+  const { error } = await supabase.from('order_logs').insert({
+    order_id: orderId,
+    table_number: tableNumber,
+    action: 'remove_item',
+    reason: reason.trim(),
+    actor_email: me.email,
+    actor_name: me.name,
+    details: { item_name: itemName, qty },
+  });
+  if (error) console.error('order_logs insert (remove_item) failed:', error.message);
+}
+
 export async function listOrderLogs(limit = 200): Promise<OrderLog[]> {
   const { data } = await supabase
     .from('order_logs')
