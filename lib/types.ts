@@ -100,28 +100,6 @@ export type OrderItem = {
   voided_by: string | null;
 };
 
-// Suggested starter modifiers shown as one-tap "add" chips in the admin
-// menu editor. They are just suggestions — the waiter only ever sees
-// the modifiers that were actually saved on each menu item.
-export const SUGGESTED_MODIFIERS: ItemModifier[] = [
-  { label: 'No pork',          label_zh: '不豬肉' },
-  { label: 'No shrimp',        label_zh: '不蝦' },
-  { label: 'No peanut',        label_zh: '不花生' },
-  { label: 'No coriander',     label_zh: '不香菜' },
-  { label: 'No spring onion',  label_zh: '不蔥' },
-  { label: 'Less oil',         label_zh: '少油' },
-  { label: 'Less salt',        label_zh: '少鹽' },
-  { label: 'Extra sauce',      label_zh: '多醬' },
-  { label: 'Extra chilli',     label_zh: '多辣' },
-  { label: 'No chilli',        label_zh: '不辣' },
-  { label: 'Well done',        label_zh: '熟透' },
-  { label: 'Hot water',        label_zh: '熱水' },
-  { label: 'No ice',           label_zh: '不加冰' },
-  { label: 'Less sugar',       label_zh: '少糖' },
-  { label: 'Extra sugar',      label_zh: '多糖' },
-  { label: 'Half portion',     label_zh: '半份' },
-];
-
 export type OrderStatus = 'open' | 'closed' | 'paid' | 'void' | 'refunded';
 
 export type Order = {

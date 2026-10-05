@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { AdminPageHeader, PrimaryBtn, SecondaryBtn, ErrorBanner, EmptyState } from '@/components/ui';
-import { SUGGESTED_MODIFIERS, MENU_CATEGORIES, stationForCategory, type ItemModifier, type MenuItem, type PrintStation } from '@/lib/types';
+import { MENU_CATEGORIES, stationForCategory, type ItemModifier, type MenuItem, type PrintStation } from '@/lib/types';
 
 // Display metadata for the printer each category routes to.  Routing itself
 // lives in stationForCategory(); this is only for the admin badges/editor.
@@ -528,31 +528,6 @@ export default function AdminMenuPage() {
                   setDraft({ ...draft, options_available: [...draft.options_available, m] });
                 }}
               />
-
-              {/* Suggestions row */}
-              <p className="text-[10px] uppercase tracking-widest text-[var(--ink-400)] font-semibold mt-3 mb-2">
-                Suggestions — tap to add
-              </p>
-              <div className="flex flex-wrap gap-1.5 min-w-0">
-                {SUGGESTED_MODIFIERS.filter(
-                  (s) => !draft.options_available.some((x) => x.label === s.label)
-                ).map((s, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() =>
-                      setDraft({
-                        ...draft,
-                        options_available: [...draft.options_available, s],
-                      })
-                    }
-                    className="text-[10px] px-2.5 py-1 rounded-full bg-[var(--cream-100)] text-[var(--ink-700)] border border-[var(--ink-200)] hover:border-[var(--brand-400)] max-w-full break-words text-left"
-                  >
-                    + {s.label}
-                    {s.label_zh && <span className="text-[var(--ink-400)]"> · {s.label_zh}</span>}
-                  </button>
-                ))}
-              </div>
             </div>
 
             <div className="space-y-2 mb-5">
