@@ -1,7 +1,7 @@
 'use client';
 
-// Kitchen display — thin wrapper around StationDisplay filtered to
-// food items (kitchen station).
+// Back Kitchen display — thin wrapper around StationDisplay, showing the
+// back-kitchen (wok) items: noodles & fried.
 
 import StationDisplay from '@/components/station-display';
 
@@ -9,8 +9,8 @@ export default function KitchenPage() {
   return (
     <StationDisplay
       station="kitchen"
-      title="Kitchen"
-      titleZh="廚房"
+      title="Back Kitchen"
+      titleZh="後廚"
       emoji="👨‍🍳"
     />
   );

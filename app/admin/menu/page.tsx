@@ -10,9 +10,9 @@ import { SUGGESTED_MODIFIERS, MENU_CATEGORIES, stationForCategory, type ItemModi
 // Display metadata for the printer each category routes to.  Routing itself
 // lives in stationForCategory(); this is only for the admin badges/editor.
 const STATION_META: Record<PrintStation, { label: string; emoji: string; bg: string; fg: string }> = {
-  kitchen: { label: 'Kitchen 廚房',  emoji: '👨‍🍳', bg: 'var(--brand-50)',      fg: 'var(--brand-700)' },
-  cashier: { label: 'Cashier 前台',  emoji: '🧾',   bg: 'var(--gold-400)/15',   fg: 'var(--gold-600)' },
-  bar:     { label: 'Bar 水吧',      emoji: '🫖',   bg: 'rgb(6 95 70 / 0.15)',  fg: 'var(--jade-600)' },
+  kitchen: { label: 'Back Kitchen 後廚',  emoji: '👨‍🍳', bg: 'var(--brand-50)',      fg: 'var(--brand-700)' },
+  cashier: { label: 'Front Kitchen 前廚', emoji: '🧾',   bg: 'var(--gold-400)/15',   fg: 'var(--gold-600)' },
+  bar:     { label: 'Bar 水吧',           emoji: '🫖',   bg: 'rgb(6 95 70 / 0.15)',  fg: 'var(--jade-600)' },
 };
 
 type Draft = {
@@ -34,7 +34,7 @@ const EMPTY: Draft = {
   price: '',
   image_url: '',
   options_available: [],
-  category: 'Counter',
+  category: 'Dim Sum',
   sort_order: '0',
   is_available: true,
   temporarily_disabled: false,
@@ -99,7 +99,7 @@ export default function AdminMenuPage() {
   const grouped = useMemo(() => {
     const m = new Map<string, MenuItem[]>();
     for (const i of items) {
-      const c = i.category || 'Counter';
+      const c = i.category || 'Other';
       if (!m.has(c)) m.set(c, []);
       m.get(c)!.push(i);
     }
@@ -128,7 +128,7 @@ export default function AdminMenuPage() {
       price: String(item.price),
       image_url: item.image_url ?? '',
       options_available: Array.isArray(item.options_available) ? item.options_available : [],
-      category: item.category || 'Counter',
+      category: item.category || 'Other',
       sort_order: String(item.sort_order ?? 0),
       is_available: item.is_available !== false,
       temporarily_disabled: item.temporarily_disabled === true,
@@ -150,13 +150,13 @@ export default function AdminMenuPage() {
       price: priceNum,
       image_url: draft.image_url.trim() || null,
       options_available: draft.options_available,
-      category: draft.category.trim() || 'Counter',
+      category: draft.category.trim() || 'Other',
       sort_order: Number(draft.sort_order) || 0,
       is_available: draft.is_available,
       temporarily_disabled: draft.temporarily_disabled,
       // Station is DERIVED from the category so it always matches the printer
       // the item routes to (Noodles → kitchen, Drinks → bar, else → cashier).
-      station: stationForCategory(draft.category.trim() || 'Counter'),
+      station: stationForCategory(draft.category.trim() || 'Other'),
     };
     const { error } = draft.id
       ? await supabase.from('menu_items').update(payload).eq('id', draft.id)
@@ -467,8 +467,8 @@ export default function AdminMenuPage() {
                 );
               })()}
               <span className="text-xs text-[var(--ink-400)]">
-                Noodles &amp; Fried → kitchen · Drinks → bar · everything else
-                (Counter Food) → cashier / front counter.
+                Noodles &amp; Fried → Back Kitchen · Drinks → Bar · everything
+                else (dim sum, buns, rice, roasted…) → Front Kitchen.
               </span>
             </Field>
 

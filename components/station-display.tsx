@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { fulfillRestock, listPendingRestock } from '@/lib/restock';
-import type { OrderItem, RestockRequest, PrintStation } from '@/lib/types';
+import { stationForCategory, type OrderItem, type RestockRequest, type PrintStation } from '@/lib/types';
 
 type OrderRow = {
   id: number;
@@ -43,11 +43,13 @@ export default function StationDisplay({
   }, []);
 
   // Menu station map — needed to filter order items to just this station.
+  // Derived from the item's CATEGORY (same rule the printers use), so the
+  // screen always matches where the item actually prints.
   useEffect(() => {
     async function loadMenu() {
-      const { data } = await supabase.from('menu_items').select('id, station');
+      const { data } = await supabase.from('menu_items').select('id, category');
       const m = new Map<number, PrintStation>();
-      (data ?? []).forEach((r) => m.set(r.id as number, r.station as PrintStation));
+      (data ?? []).forEach((r) => m.set(r.id as number, stationForCategory(r.category as string)));
       setMenuStationById(m);
     }
     loadMenu();

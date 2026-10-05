@@ -131,7 +131,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           {/* Nav pills — scroll horizontally when they don't fit */}
           <nav className="flex-1 flex items-center gap-1 overflow-x-auto no-scrollbar">
             <NavLink href="/"        active={pathname === '/'}                        label="POS" />
-            <NavLink href="/kitchen" active={pathname === '/kitchen'}                 label="Kitchen" />
+            <NavLink href="/kitchen" active={pathname === '/kitchen'}                 label="Back Kitchen" />
             <NavLink href="/bar"     active={pathname === '/bar'}                     label="Bar" />
             <NavLink href="/restock" active={pathname === '/restock'}                 label="Restock" />
             <NavLink href="/cashier" active={pathname === '/cashier'}                 label="Cashier" />

@@ -138,7 +138,7 @@ export default function POSTerminal({
         // Hide items that the owner marked "off menu" (is_available = false)
         // or that the shop toggled "sold out today" (temporarily_disabled = true).
         .filter((i) => i.is_available !== false && i.temporarily_disabled !== true)
-        .filter((i) => categoryFilter === 'all' || (i.category || 'Counter') === categoryFilter),
+        .filter((i) => categoryFilter === 'all' || (i.category || 'Other') === categoryFilter),
     [items, categoryFilter]
   );
 
@@ -150,7 +150,7 @@ export default function POSTerminal({
     const counts: Record<string, number> = { all: available.length };
     for (const c of MENU_CATEGORIES) counts[c.key] = 0;
     for (const it of available) {
-      const k = it.category || 'Counter';
+      const k = it.category || 'Other';
       counts[k] = (counts[k] || 0) + 1;
     }
     return counts;
@@ -159,7 +159,7 @@ export default function POSTerminal({
   const grouped = useMemo(() => {
     const m = new Map<string, MenuItem[]>();
     for (const i of visibleItems) {
-      const c = i.category || 'Counter';
+      const c = i.category || 'Other';
       if (!m.has(c)) m.set(c, []);
       m.get(c)!.push(i);
     }
@@ -366,9 +366,9 @@ export default function POSTerminal({
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_400px] gap-6 mt-6">
         <section className="min-w-0">
-          {/* Sticky filter bar.  One row of category chips — each category
-              maps to exactly one printer (Noodles & Fried → kitchen,
-              Counter Food → cashier, Drinks → bar). */}
+          {/* Sticky filter bar — one chip per menu category so items are easy
+              to find.  Each category prints at one of three stations (back
+              kitchen / front kitchen / bar); see stationForCategory in lib/types. */}
           <div className="sticky top-14 z-10 -mx-4 md:-mx-6 px-4 md:px-6 py-3 bg-[var(--cream-50)]/90 backdrop-blur border-b border-[var(--ink-200)] mb-6">
 
             {/* Category filter */}

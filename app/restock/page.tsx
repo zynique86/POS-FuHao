@@ -171,7 +171,7 @@ export default function RestockPage() {
           <div className="text-5xl md:text-6xl mb-3 opacity-40">🥟</div>
           <p className="text-lg text-[var(--ink-700)] font-semibold">No counter food yet</p>
           <p className="text-sm text-[var(--ink-500)] mt-1">
-            Add items in the <b>Counter Food</b> category under Admin → Menu.
+            Add front-counter food (dim sum, buns, rice…) under Admin → Menu.
           </p>
         </div>
       )}
@@ -326,7 +326,7 @@ function RestockModal({
             <span className="text-white">🔥</span>
           </div>
           <h2 className="text-xl font-bold text-[var(--ink-900)]">Restock request</h2>
-          <p className="text-sm text-[var(--ink-500)] mt-1">Prints at 👨‍🍳 Kitchen · 廚房</p>
+          <p className="text-sm text-[var(--ink-500)] mt-1">Prints at 👨‍🍳 Back Kitchen · 後廚</p>
         </div>
 
         <div className="bg-[var(--cream-100)] rounded-2xl p-4 mb-4 text-center">

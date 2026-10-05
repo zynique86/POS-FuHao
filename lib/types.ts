@@ -28,45 +28,59 @@ export type MenuItem = {
 export type PrintStation = 'kitchen' | 'bar' | 'cashier';
 
 // -------------------------------------------------------------------------
-// CATEGORY → STATION ROUTING  (three categories, one per printer)
+// CATEGORY → STATION ROUTING
 // -------------------------------------------------------------------------
-// The whole menu is split into exactly three categories, each tied to one
-// printer — so assigning work to a station is just a matter of the category:
-//   • Noodles & Fried  → KITCHEN   (back-of-house prep station)
-//   • Counter Food     → CASHIER   (dim sum, buns, rice, roasted, etc. —
-//                                    everything plated at the front counter)
-//   • Drinks           → BAR       (water / drinks counter)
+// Waiters pick from many menu categories (below) so items are easy to find.
+// The back end collapses every category to just THREE printer stations, so the
+// printer always knows exactly where to print:
 //
-// This is the single source of truth for routing.  The POS (new orders), the
-// Void modal (reversing an item) and the cashier all call it, so a change here
-// flows through automatically.  The `station` field on `menu_items` is kept in
-// sync with the category for display only; routing uses the category.
+//   'kitchen'  = BACK KITCHEN  (the wok)      → noodles & fried
+//   'cashier'  = FRONT KITCHEN (front counter)→ dim sum, buns, rice, roasted, …
+//   'bar'      = BAR                          → drinks
+//
+// (The station KEYS stay 'kitchen'/'cashier'/'bar' because each maps to a
+//  printer IP in printer-service/.env — only the on-screen/printed LABELS say
+//  "Back Kitchen" / "Front Kitchen" / "Bar".)
+//
+// To send a category to a different printer, change ONE line in the table
+// below — nothing else needs to change.  This is the single source of truth:
+// the POS, the kitchen/bar screens, the restock page and the cashier all use it.
+const CATEGORY_STATION: Record<string, PrintStation> = {
+  // Back kitchen (wok)
+  'noodles': 'kitchen',
+  'noodles / fried': 'kitchen',
+  'fried': 'kitchen',
+  // Bar
+  'drinks': 'bar',
+  // Front kitchen (front counter) — everything else
+  'dim sum': 'cashier',
+  'buns': 'cashier',
+  'rice': 'cashier',
+  'roasted': 'cashier',
+  'other': 'cashier',
+};
+
 export function stationForCategory(
   category: string | null | undefined
 ): PrintStation {
   // Normalise so stray casing / spacing can't misroute an item.
   const c = (category || '').trim().toLowerCase();
-  if (c === 'drinks') return 'bar';
-  if (
-    c === 'noodles' ||
-    c === 'fried' ||
-    c === 'noodles & fried' ||
-    c === 'noodles / fried'
-  ) {
-    return 'kitchen';
-  }
-  // Counter food (and any legacy/unknown category) is sold at the front
-  // counter, so it prints at the cashier.
-  return 'cashier';
+  // Unknown / uncategorised items default to the front counter.
+  return CATEGORY_STATION[c] ?? 'cashier';
 }
 
-// The three menu categories — one per printer.  Chinese labels stay visible
-// alongside the English so cooks and cashiers see both.  The order here is the
-// order shown in the POS and admin: Kitchen, Counter, Bar.
+// Menu categories the WAITER sees and filters by — kept rich so items are easy
+// to find.  Each one routes to one of the three printer stations via
+// stationForCategory() above (shown in the comments).  Chinese labels stay
+// visible alongside the English so everyone sees both.
 export const MENU_CATEGORIES: { key: string; label: string; label_zh: string; emoji: string }[] = [
-  { key: 'Noodles', label: 'Noodles & Fried', label_zh: '面 / 炒類', emoji: '🍜' }, // → kitchen
-  { key: 'Counter', label: 'Counter Food',    label_zh: '前台食品', emoji: '🥟' }, // → cashier
+  { key: 'Dim Sum', label: 'Dim Sum',         label_zh: '點心',     emoji: '🥟' }, // → front kitchen
+  { key: 'Buns',    label: 'Buns',            label_zh: '包點',     emoji: '🫓' }, // → front kitchen
+  { key: 'Rice',    label: 'Rice',            label_zh: '飯類',     emoji: '🍚' }, // → front kitchen
+  { key: 'Roasted', label: 'Roasted Meats',   label_zh: '燒味',     emoji: '🍖' }, // → front kitchen
+  { key: 'Noodles', label: 'Noodles & Fried', label_zh: '面 / 炒類', emoji: '🍜' }, // → back kitchen
   { key: 'Drinks',  label: 'Drinks',          label_zh: '飲料',     emoji: '🫖' }, // → bar
+  { key: 'Other',   label: 'Other',           label_zh: '其他',     emoji: '🍽️' }, // → front kitchen
 ];
 
 export type OrderItem = {

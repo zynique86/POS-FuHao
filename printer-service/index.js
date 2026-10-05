@@ -316,7 +316,7 @@ async function processJob(job) {
   }
 }
 
-// --- KITCHEN / BAR / COUNTER PREP TICKET -----------------------------------
+// --- PREP TICKET (back kitchen / front kitchen / bar) ----------------------
 // One function builds the prep ticket for any of the three stations.  The
 // POS decides where each item line is sent (see stationForCategory in
 // lib/types.ts); this function just prints what it was handed.
@@ -335,9 +335,9 @@ async function handleKitchen(job, station) {
   // Cashier prints a FRONT-COUNTER prep ticket for dim sum / buns / rice /
   // roasted / other (items plated at the front near the till).
   const stationName =
-    station === 'bar'     ? 'BAR / 水吧'       :
-    station === 'cashier' ? 'COUNTER / 前台'   :
-                            'KITCHEN / 廚房';
+    station === 'bar'     ? 'BAR / 水吧'            :
+    station === 'cashier' ? 'FRONT KITCHEN / 前廚'  :
+                            'BACK KITCHEN / 後廚';
 
   // Diagnostic — see exactly what each printer is being asked to make.
   // If "Siu Mai" shows up under "kitchen" below, the menu item's category
@@ -742,7 +742,7 @@ async function handleRestock(job, station) {
   const note = p.note;
   const by = p.by;
   const time = new Date().toLocaleTimeString('en-MY');
-  const stationName = station === 'bar' ? 'BAR / 水吧' : 'KITCHEN / 廚房';
+  const stationName = station === 'bar' ? 'BAR / 水吧' : 'BACK KITCHEN / 後廚';
 
   const lines = [
     '###################################',
@@ -871,10 +871,15 @@ module.exports = {
   handleRefund,
   handleRestock,
   stationForCategory: (category) => {
-    const c = (category || '').trim().toLowerCase();
-    if (c === 'drinks') return 'bar';
-    if (c === 'noodles' || c === 'fried' || c === 'noodles & fried' || c === 'noodles / fried') return 'kitchen';
-    return 'cashier';
+    // Mirror of lib/types.ts: category → one of three printer stations.
+    //   kitchen = back kitchen, cashier = front kitchen, bar = bar.
+    const map = {
+      'noodles': 'kitchen', 'noodles / fried': 'kitchen', 'fried': 'kitchen',
+      'drinks': 'bar',
+      'dim sum': 'cashier', 'buns': 'cashier', 'rice': 'cashier',
+      'roasted': 'cashier', 'other': 'cashier',
+    };
+    return map[(category || '').trim().toLowerCase()] ?? 'cashier';
   },
   __setTestClient,
 };
