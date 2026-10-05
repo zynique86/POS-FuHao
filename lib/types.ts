@@ -20,7 +20,6 @@ export type MenuItem = {
   category: string;
   is_available: boolean;             // owner-controlled: is this on the menu at all
   temporarily_disabled: boolean;     // sold-out / paused for today only
-  sort_order: number;
   station: PrintStation;
 };
 

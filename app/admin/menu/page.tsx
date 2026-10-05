@@ -24,7 +24,6 @@ type Draft = {
   image_url: string;
   options_available: ItemModifier[];
   category: string;
-  sort_order: string;
   is_available: boolean;
   temporarily_disabled: boolean;
   station: PrintStation;
@@ -37,7 +36,6 @@ const EMPTY: Draft = {
   image_url: '',
   options_available: [],
   category: 'Dim Sum',
-  sort_order: '0',
   is_available: true,
   temporarily_disabled: false,
   station: 'cashier',
@@ -90,7 +88,6 @@ export default function AdminMenuPage() {
       .from('menu_items')
       .select('*')
       .order('category')
-      .order('sort_order')
       .order('id');
     if (error) setErr(error.message);
     else setItems((data ?? []) as MenuItem[]);
@@ -132,7 +129,6 @@ export default function AdminMenuPage() {
       image_url: item.image_url ?? '',
       options_available: Array.isArray(item.options_available) ? item.options_available : [],
       category: item.category || 'Other',
-      sort_order: String(item.sort_order ?? 0),
       is_available: item.is_available !== false,
       temporarily_disabled: item.temporarily_disabled === true,
       station: item.station ?? 'kitchen',
@@ -160,7 +156,6 @@ export default function AdminMenuPage() {
       image_url: draft.image_url.trim() || null,
       options_available: draft.options_available,
       category: draft.category.trim() || 'Other',
-      sort_order: Number(draft.sort_order) || 0,
       is_available: draft.is_available,
       temporarily_disabled: draft.temporarily_disabled,
       // Station is DERIVED from the category so it always matches the printer
@@ -427,7 +422,7 @@ export default function AdminMenuPage() {
               />
             </Field>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="Price (RM)">
                 <input
                   type="number"
@@ -444,14 +439,6 @@ export default function AdminMenuPage() {
                   value={draft.price_cold}
                   onChange={(e) => setDraft({ ...draft, price_cold: e.target.value })}
                   placeholder="—"
-                  className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl font-mono focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
-                />
-              </Field>
-              <Field label="Sort order">
-                <input
-                  type="number"
-                  value={draft.sort_order}
-                  onChange={(e) => setDraft({ ...draft, sort_order: e.target.value })}
                   className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl font-mono focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
                 />
               </Field>

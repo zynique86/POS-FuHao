@@ -35,7 +35,6 @@ export default function RestockPage() {
       .from('menu_items')
       .select('*')
       .order('category')
-      .order('sort_order')
       .order('id');
     setItems((data ?? []) as MenuItem[]);
   }

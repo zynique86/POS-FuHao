@@ -14,7 +14,6 @@ export default async function Home() {
       .from('menu_items')
       .select('*')
       .order('category')
-      .order('sort_order')
       .order('id'),
     fetchSettings(),
   ]);

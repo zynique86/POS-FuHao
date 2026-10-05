@@ -71,7 +71,6 @@ export default function POSTerminal({
             .from('menu_items')
             .select('*')
             .order('category')
-            .order('sort_order')
             .order('id');
           if (data) setItems(data as MenuItem[]);
         }
