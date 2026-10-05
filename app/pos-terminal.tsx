@@ -22,6 +22,7 @@ type CartLine = {
   key: string;         // unique per line (so two lines of same item stay distinct)
   item: MenuItem;
   qty: number;
+  unitPrice: number;   // resolved price for this line (hot vs cold for drinks)
   options: string[];   // e.g. ['No pork', 'Extra sauce']
   note: string;        // free text
 };
@@ -226,7 +227,7 @@ export default function POSTerminal({
   const existingSub = existing
     ? sumLines(existing.lines.map((l) => ({ qty: l.qty, price: l.price })))
     : 0;
-  const newSub = sumLines(cart.map((l) => ({ qty: l.qty, price: l.item.price })));
+  const newSub = sumLines(cart.map((l) => ({ qty: l.qty, price: l.unitPrice })));
   const runningSub = existingSub + newSub;
   const breakdown = computeBreakdown(runningSub, settings);
   const newCount = cart.reduce((s, l) => s + l.qty, 0);
@@ -272,7 +273,7 @@ export default function POSTerminal({
         menu_item_id: l.item.id,
         name_snapshot: l.item.name_en,
         name_zh_snapshot: l.item.name_zh,
-        price_at_time: l.item.price,
+        price_at_time: l.unitPrice,
         options: l.options.length > 0 ? l.options.join(', ') : null,
         note: l.note.trim() || null,
         qty: l.qty,
@@ -631,6 +632,7 @@ function MenuButton({ item, onAdd }: { item: MenuItem; onAdd: () => void }) {
         <div className="mt-2.5 md:mt-3 flex items-center justify-between gap-2">
           <span className="text-[var(--brand-700)] font-mono font-bold text-sm md:text-base whitespace-nowrap">
             RM {Number(item.price).toFixed(2)}
+            {item.price_cold != null && ` / ${Number(item.price_cold).toFixed(2)}`}
           </span>
           <span
             className="text-sm font-bold w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-white shrink-0"
@@ -812,7 +814,7 @@ function CartPanel({
                   </button>
                 </div>
                 <span className="font-mono w-16 text-right text-sm text-[var(--brand-700)] font-bold">
-                  RM {(l.item.price * l.qty).toFixed(2)}
+                  RM {(l.unitPrice * l.qty).toFixed(2)}
                 </span>
               </li>
             ))}
@@ -886,6 +888,10 @@ function ItemOptionsModal({
   const [qty, setQty] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [note, setNote] = useState('');
+  // Drinks with a cold price get a Hot/Cold choice (defaults to Hot).
+  const hasHotCold = item.price_cold != null;
+  const [temp, setTemp] = useState<'hot' | 'cold'>('hot');
+  const unitPrice = hasHotCold && temp === 'cold' ? (item.price_cold as number) : item.price;
 
   function toggle(label: string) {
     setSelected((prev) => {
@@ -897,11 +903,13 @@ function ItemOptionsModal({
   }
 
   function submit() {
+    const tempLabel = hasHotCold ? (temp === 'cold' ? 'Cold 冰' : 'Hot 热') : null;
     const line: CartLine = {
       key: `${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
       item,
       qty,
-      options: [...selected],
+      unitPrice,
+      options: [...(tempLabel ? [tempLabel] : []), ...selected],
       note: note.trim(),
     };
     onAdd(line);
@@ -913,6 +921,33 @@ function ItemOptionsModal({
         <div className="w-full aspect-[4/2] rounded-2xl overflow-hidden mb-4 bg-[var(--cream-100)]">
           <img src={item.image_url} alt="" className="w-full h-full object-cover" />
         </div>
+      )}
+
+      {hasHotCold && (
+        <>
+          <p className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-2 font-semibold">
+            Hot or Cold · 冷热
+          </p>
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {([
+              { k: 'hot' as const, label: '🔥 Hot 热', p: item.price },
+              { k: 'cold' as const, label: '🧊 Cold 冰', p: item.price_cold as number },
+            ]).map((o) => (
+              <button
+                key={o.k}
+                onClick={() => setTemp(o.k)}
+                className={`py-3 rounded-xl text-sm font-bold transition ${
+                  temp === o.k
+                    ? 'text-white'
+                    : 'bg-[var(--cream-100)] text-[var(--ink-700)] border border-[var(--ink-200)] hover:border-[var(--brand-400)]'
+                }`}
+                style={temp === o.k ? { background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))' } : undefined}
+              >
+                {o.label} · RM {o.p.toFixed(2)}
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       {item.options_available && item.options_available.length > 0 && (
@@ -983,7 +1018,7 @@ function ItemOptionsModal({
       <div className="grid grid-cols-2 gap-2">
         <SecondaryBtn onClick={onCancel}>Cancel</SecondaryBtn>
         <PrimaryBtn onClick={submit}>
-          Add {qty > 1 ? `${qty}× ` : ''}· RM {(item.price * qty).toFixed(2)}
+          Add {qty > 1 ? `${qty}× ` : ''}· RM {(unitPrice * qty).toFixed(2)}
         </PrimaryBtn>
       </div>
     </ModalShell>

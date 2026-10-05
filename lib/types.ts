@@ -13,7 +13,8 @@ export type MenuItem = {
   id: number;
   name_en: string;
   name_zh: string | null;
-  price: number;
+  price: number;                     // base price; for drinks this is the HOT price
+  price_cold: number | null;         // drinks only: COLD price. null = no hot/cold choice
   image_url: string | null;
   options_available: ItemModifier[];
   category: string;
@@ -34,8 +35,8 @@ export type PrintStation = 'kitchen' | 'bar' | 'cashier';
 // The back end collapses every category to just THREE printer stations, so the
 // printer always knows exactly where to print:
 //
-//   'kitchen'  = BACK KITCHEN  (the wok)      → noodles & fried
-//   'cashier'  = FRONT KITCHEN (front counter)→ dim sum, buns, rice, roasted, …
+//   'kitchen'  = BACK KITCHEN  (the wok)      → noodles, fried & rice
+//   'cashier'  = FRONT KITCHEN (front counter)→ dim sum, buns, roasted, …
 //   'bar'      = BAR                          → drinks
 //
 // (The station KEYS stay 'kitchen'/'cashier'/'bar' because each maps to a
@@ -50,12 +51,12 @@ const CATEGORY_STATION: Record<string, PrintStation> = {
   'noodles': 'kitchen',
   'noodles / fried': 'kitchen',
   'fried': 'kitchen',
+  'rice': 'kitchen',
   // Bar
   'drinks': 'bar',
   // Front kitchen (front counter) — everything else
   'dim sum': 'cashier',
   'buns': 'cashier',
-  'rice': 'cashier',
   'roasted': 'cashier',
   'other': 'cashier',
 };
@@ -74,13 +75,14 @@ export function stationForCategory(
 // stationForCategory() above (shown in the comments).  Chinese labels stay
 // visible alongside the English so everyone sees both.
 export const MENU_CATEGORIES: { key: string; label: string; label_zh: string; emoji: string }[] = [
-  { key: 'Dim Sum', label: 'Dim Sum',         label_zh: '點心',     emoji: '🥟' }, // → front kitchen
-  { key: 'Buns',    label: 'Buns',            label_zh: '包點',     emoji: '🫓' }, // → front kitchen
-  { key: 'Rice',    label: 'Rice',            label_zh: '飯類',     emoji: '🍚' }, // → front kitchen
-  { key: 'Roasted', label: 'Roasted Meats',   label_zh: '燒味',     emoji: '🍖' }, // → front kitchen
-  { key: 'Noodles', label: 'Noodles & Fried', label_zh: '面 / 炒類', emoji: '🍜' }, // → back kitchen
-  { key: 'Drinks',  label: 'Drinks',          label_zh: '飲料',     emoji: '🫖' }, // → bar
-  { key: 'Other',   label: 'Other',           label_zh: '其他',     emoji: '🍽️' }, // → front kitchen
+  { key: 'Dim Sum', label: 'Dim Sum',       label_zh: '點心', emoji: '🥟' }, // → front kitchen
+  { key: 'Buns',    label: 'Buns',          label_zh: '包點', emoji: '🫓' }, // → front kitchen
+  { key: 'Noodles', label: 'Noodles',       label_zh: '麵類', emoji: '🍜' }, // → back kitchen
+  { key: 'Fried',   label: 'Fried',         label_zh: '油炸', emoji: '🍤' }, // → back kitchen
+  { key: 'Rice',    label: 'Rice / Congee', label_zh: '飯 / 粥', emoji: '🍚' }, // → back kitchen
+  { key: 'Roasted', label: 'Roasted Meats', label_zh: '燒味', emoji: '🍖' }, // → front kitchen
+  { key: 'Drinks',  label: 'Drinks',        label_zh: '飲料', emoji: '🫖' }, // → bar
+  { key: 'Other',   label: 'Other',         label_zh: '其他', emoji: '🍽️' }, // → front kitchen
 ];
 
 export type OrderItem = {

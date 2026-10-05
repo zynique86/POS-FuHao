@@ -20,6 +20,7 @@ type Draft = {
   name_en: string;
   name_zh: string;
   price: string;
+  price_cold: string;   // drinks only — leave blank for a single-price item
   image_url: string;
   options_available: ItemModifier[];
   category: string;
@@ -32,6 +33,7 @@ const EMPTY: Draft = {
   name_en: '',
   name_zh: '',
   price: '',
+  price_cold: '',
   image_url: '',
   options_available: [],
   category: 'Dim Sum',
@@ -126,6 +128,7 @@ export default function AdminMenuPage() {
       name_en: item.name_en,
       name_zh: item.name_zh ?? '',
       price: String(item.price),
+      price_cold: item.price_cold != null ? String(item.price_cold) : '',
       image_url: item.image_url ?? '',
       options_available: Array.isArray(item.options_available) ? item.options_available : [],
       category: item.category || 'Other',
@@ -142,12 +145,18 @@ export default function AdminMenuPage() {
     if (!draft.name_en.trim()) return setErr('English name is required');
     const priceNum = Number(draft.price);
     if (!Number.isFinite(priceNum) || priceNum < 0) return setErr('Price must be a non-negative number');
+    const coldTrim = draft.price_cold.trim();
+    const coldNum = coldTrim ? Number(coldTrim) : null;
+    if (coldNum !== null && (!Number.isFinite(coldNum) || coldNum < 0)) {
+      return setErr('Cold price must be a non-negative number (or blank)');
+    }
     setSaving(true);
     setErr(null);
     const payload = {
       name_en: draft.name_en.trim(),
       name_zh: draft.name_zh.trim() || null,
       price: priceNum,
+      price_cold: coldNum,
       image_url: draft.image_url.trim() || null,
       options_available: draft.options_available,
       category: draft.category.trim() || 'Other',
@@ -418,13 +427,23 @@ export default function AdminMenuPage() {
               />
             </Field>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <Field label="Price (RM)">
                 <input
                   type="number"
                   step="0.10"
                   value={draft.price}
                   onChange={(e) => setDraft({ ...draft, price: e.target.value })}
+                  className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl font-mono focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+                />
+              </Field>
+              <Field label="Cold price (drinks)">
+                <input
+                  type="number"
+                  step="0.10"
+                  value={draft.price_cold}
+                  onChange={(e) => setDraft({ ...draft, price_cold: e.target.value })}
+                  placeholder="—"
                   className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl font-mono focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
                 />
               </Field>
@@ -467,8 +486,8 @@ export default function AdminMenuPage() {
                 );
               })()}
               <span className="text-xs text-[var(--ink-400)]">
-                Noodles &amp; Fried → Back Kitchen · Drinks → Bar · everything
-                else (dim sum, buns, rice, roasted…) → Front Kitchen.
+                Noodles, Fried &amp; Rice → Back Kitchen · Drinks → Bar ·
+                everything else (dim sum, buns, roasted…) → Front Kitchen.
               </span>
             </Field>
 

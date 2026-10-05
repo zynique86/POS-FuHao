@@ -874,10 +874,9 @@ module.exports = {
     // Mirror of lib/types.ts: category → one of three printer stations.
     //   kitchen = back kitchen, cashier = front kitchen, bar = bar.
     const map = {
-      'noodles': 'kitchen', 'noodles / fried': 'kitchen', 'fried': 'kitchen',
+      'noodles': 'kitchen', 'noodles / fried': 'kitchen', 'fried': 'kitchen', 'rice': 'kitchen',
       'drinks': 'bar',
-      'dim sum': 'cashier', 'buns': 'cashier', 'rice': 'cashier',
-      'roasted': 'cashier', 'other': 'cashier',
+      'dim sum': 'cashier', 'buns': 'cashier', 'roasted': 'cashier', 'other': 'cashier',
     };
     return map[(category || '').trim().toLowerCase()] ?? 'cashier';
   },
