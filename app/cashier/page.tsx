@@ -23,8 +23,18 @@ import { businessDayStartISO } from '@/lib/datetime';
 import { useSettings } from '@/lib/use-settings';
 import { buildDuitNowPayload } from '@/lib/duitnow';
 import { QRCodeSVG } from 'qrcode.react';
+import {
+  applyRowEvent,
+  applyRowEventBuckets,
+  type RealtimePayload,
+} from '@/lib/realtime-reducers';
 
 type Order = BaseOrder & { items: OrderItem[]; payments: Payment[] };
+
+// Keep this in sync with the paid-orders slice shown in the UI — the initial
+// loadAll fetches the 20 most recent paid orders of the day; after Realtime
+// updates we trim the same way so the list stays bounded.
+const PAID_TODAY_LIMIT = 20;
 
 // Net total for one payment method on an order, summing every row (so
 // split bills count) and letting negative amounts (refunds) subtract.
@@ -48,8 +58,14 @@ type Screen =
   | { kind: 'closeShift' };
 
 export default function CashierPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [paidToday, setPaidToday] = useState<Order[]>([]);
+  // Raw per-table state. The combined { ...order, items, payments } shape the
+  // rest of the component renders is derived in a useMemo below so Realtime
+  // payloads can be applied by table without rebuilding the merged list by
+  // refetching everything.
+  const [openOrders, setOpenOrders] = useState<BaseOrder[]>([]);
+  const [paidOrders, setPaidOrders] = useState<BaseOrder[]>([]);
+  const [items, setItems] = useState<OrderItem[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [screen, setScreen] = useState<Screen>({ kind: 'closed' });
   const [shift, setShift] = useState<Shift | null>(null);
@@ -72,11 +88,12 @@ export default function CashierPage() {
         .not('paid_at', 'is', null)
         .gte('paid_at', businessDayStartISO())
         .order('paid_at', { ascending: false })
-        .limit(20),
+        .limit(PAID_TODAY_LIMIT),
     ]);
 
-    const all = [...(openRes.data ?? []), ...(paidRes.data ?? [])] as BaseOrder[];
-    const ids = all.map((o) => o.id);
+    const openRows = (openRes.data ?? []) as BaseOrder[];
+    const paidRows = (paidRes.data ?? []) as BaseOrder[];
+    const ids = [...openRows, ...paidRows].map((o) => o.id);
 
     const [itemRes, payRes] = await Promise.all([
       ids.length
@@ -87,16 +104,61 @@ export default function CashierPage() {
         : Promise.resolve({ data: [] as Payment[] }),
     ]);
 
-    const combine = (rows: BaseOrder[]): Order[] =>
-      rows.map((o) => ({
-        ...o,
-        items: (itemRes.data ?? []).filter((i) => i.order_id === o.id) as OrderItem[],
-        payments: (payRes.data ?? []).filter((p) => p.order_id === o.id) as Payment[],
-      }));
-
-    setOrders(combine((openRes.data ?? []) as BaseOrder[]));
-    setPaidToday(combine((paidRes.data ?? []) as BaseOrder[]));
+    setOpenOrders(openRows);
+    setPaidOrders(paidRows);
+    setItems((itemRes.data ?? []) as OrderItem[]);
+    setPayments((payRes.data ?? []) as Payment[]);
     setLoading(false);
+  }
+
+  // Predicates match the SELECT filters in loadAll so a Realtime payload lands
+  // in the right bucket. `paidToday` is a server-side `.limit(20)` on initial
+  // fetch; after Realtime pushes we trim in the useMemo below.
+  function isUnpaid(o: BaseOrder): boolean {
+    return o.paid_at == null && o.status !== 'void';
+  }
+  function isPaidToday(o: BaseOrder): boolean {
+    if (o.paid_at == null) return false;
+    return new Date(o.paid_at).getTime() >= new Date(businessDayStartISO()).getTime();
+  }
+
+  function handleOrderEvent(payload: RealtimePayload<BaseOrder>) {
+    const res = applyRowEventBuckets(
+      { open: openOrders, paid: paidOrders },
+      payload,
+      { open: isUnpaid, paid: isPaidToday },
+    );
+    if (!res.ok) {
+      console.warn('[cashier] orders reducer fell back to refetch:', res.reason);
+      loadAll();
+      return;
+    }
+    setOpenOrders(res.state.open);
+    setPaidOrders(res.state.paid);
+  }
+
+  function handleItemEvent(payload: RealtimePayload<OrderItem>) {
+    setItems((prev) => {
+      const res = applyRowEvent(prev, payload);
+      if (!res.ok) {
+        console.warn('[cashier] order_items reducer fell back to refetch:', res.reason);
+        loadAll();
+        return prev;
+      }
+      return res.rows;
+    });
+  }
+
+  function handlePaymentEvent(payload: RealtimePayload<Payment>) {
+    setPayments((prev) => {
+      const res = applyRowEvent(prev, payload);
+      if (!res.ok) {
+        console.warn('[cashier] payments reducer fell back to refetch:', res.reason);
+        loadAll();
+        return prev;
+      }
+      return res.rows;
+    });
   }
 
   useEffect(() => {
@@ -104,15 +166,49 @@ export default function CashierPage() {
     refreshShift();
     const channel = supabase
       .channel('cashier')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => loadAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => loadAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => loadAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shift_opens' }, () => refreshShift())
-      .subscribe();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' },
+        (p) => handleOrderEvent(p as unknown as RealtimePayload<BaseOrder>))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' },
+        (p) => handleItemEvent(p as unknown as RealtimePayload<OrderItem>))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' },
+        (p) => handlePaymentEvent(p as unknown as RealtimePayload<Payment>))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shift_opens' },
+        () => refreshShift())
+      .subscribe((status) => {
+        // Full refetch on (re)connect so we don't miss events that fired
+        // between the socket dropping and resubscribing.
+        if (status === 'SUBSCRIBED') loadAll();
+      });
     return () => {
       supabase.removeChannel(channel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Merged render shape — order rows plus their items & payments. Sort order
+  // mirrors the server queries: unpaid oldest-first, paid newest-first.
+  const orders = useMemo<Order[]>(() => {
+    const sorted = [...openOrders].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    );
+    return sorted.map((o) => ({
+      ...o,
+      items: items.filter((i) => i.order_id === o.id),
+      payments: payments.filter((p) => p.order_id === o.id),
+    }));
+  }, [openOrders, items, payments]);
+
+  const paidToday = useMemo<Order[]>(() => {
+    const sorted = [...paidOrders].sort(
+      (a, b) =>
+        new Date(b.paid_at ?? 0).getTime() - new Date(a.paid_at ?? 0).getTime(),
+    );
+    return sorted.slice(0, PAID_TODAY_LIMIT).map((o) => ({
+      ...o,
+      items: items.filter((i) => i.order_id === o.id),
+      payments: payments.filter((p) => p.order_id === o.id),
+    }));
+  }, [paidOrders, items, payments]);
 
   // Cash sales this shift → used for expected drawer close.
   // Sum every cash payment on the order so split bills count, and net out
