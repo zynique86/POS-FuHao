@@ -12,9 +12,7 @@ import { ModalShell, PrimaryBtn, SecondaryBtn } from '@/components/ui';
 import { getCurrentUser } from '@/lib/roles';
 import {
   MENU_CATEGORIES,
-  stationForCategory,
   type MenuItem,
-  type PrintStation,
   type ShopSettings,
 } from '@/lib/types';
 
@@ -232,44 +230,27 @@ export default function POSTerminal({
   const breakdown = computeBreakdown(runningSub, settings, existing?.discount ?? 0);
   const newCount = cart.reduce((s, l) => s + l.qty, 0);
 
-  // Send
+  // Send — one atomic RPC that inserts (or appends to) the order, writes
+  // every order_items line, and queues the print_jobs (customer summary +
+  // per-station prep tickets).  Previously this ran as three separate
+  // round-trips; a failure mid-flight could leave orphan rows and skip the
+  // kitchen printer.  Routing of each line to kitchen / bar / cashier is
+  // decided inside the RPC against the public.category_station_routing
+  // table (seeded by migrations/send_order_rpc.sql).
   async function sendOrder() {
     if (cart.length === 0) return;
     setSending(true);
     try {
-      let orderId: number;
-      if (existing) {
-        orderId = existing.id;
-      } else {
-        const init = computeBreakdown(newSub, settings);
-        // Record which signed-in user is sending the order so Kitchen,
-        // Bar and Cashier screens can display who took it.
-        const me = await getCurrentUser();
-        const { data: order, error: orderErr } = await supabase
-          .from('orders')
-          .insert({
-            table_number: tableNo,
-            subtotal: init.subtotal,
-            service_charge: init.service_charge,
-            tax: init.tax,
-            rounding: init.rounding,
-            total: init.total,
-            status: 'open',
-            taken_by_email: me.email,
-            taken_by_name: me.name,
-          })
-          .select()
-          .single();
-        if (orderErr || !order) {
-          alert('Could not create order: ' + (orderErr?.message ?? 'unknown'));
-          setSending(false);
-          return;
-        }
-        orderId = order.id as number;
-      }
-
+      // Record which signed-in user is sending THIS ticket so Kitchen,
+      // Bar and Cashier screens display who took it — on resend by a
+      // different waiter, the RPC updates the order's taken_by_name too.
+      const me = await getCurrentUser();
+      // Thread the existing order's discount into the breakdown so the RPC
+      // writes the discounted total back on resend/append (otherwise the
+      // discount silently drops; see PR #2).
+      const existingDiscount = existing?.discount ?? 0;
+      const b = computeBreakdown(runningSub, settings, existingDiscount);
       const lines = cart.map((l) => ({
-        order_id: orderId,
         menu_item_id: l.item.id,
         name_snapshot: l.item.name_en,
         name_zh_snapshot: l.item.name_zh,
@@ -279,82 +260,32 @@ export default function POSTerminal({
         qty: l.qty,
       }));
 
-      const { data: inserted, error: linesErr } = await supabase
-        .from('order_items')
-        .insert(lines)
-        .select('id, menu_item_id');
-      if (linesErr) {
-        alert('Could not add items: ' + linesErr.message);
-        setSending(false);
+      const { data, error } = await supabase.rpc('send_order', {
+        p_table_number: tableNo,
+        p_items: lines,
+        p_subtotal: b.subtotal,
+        p_service_charge: b.service_charge,
+        p_tax: b.tax,
+        p_rounding: b.rounding,
+        p_total: b.total,
+        p_discount: existingDiscount,
+        p_taken_by_email: me.email,
+        p_taken_by_name: me.name,
+      });
+      if (error || !data) {
+        alert('Could not send order: ' + (error?.message ?? 'unknown'));
         return;
       }
 
-      // Route each new line to the right station's printer.
-      // Routing is driven by the item's CATEGORY (not its station field):
-      //   Noodles → kitchen,  Drinks → bar,  everything else → cashier.
-      // See stationForCategory() in lib/types.ts for the single source of
-      // truth.  This matches the shop layout: dim sum / buns / rice /
-      // roasted / other are plated at the front counter near the cashier,
-      // noodles & fried come from the back kitchen, drinks from the bar.
-      const byStation = new Map<PrintStation, number[]>();
-      const menuById = new Map(items.map((i) => [i.id, i]));
-      for (const row of inserted ?? []) {
-        const menu = menuById.get(row.menu_item_id as number);
-        const station = stationForCategory(menu?.category);
-        if (!byStation.has(station)) byStation.set(station, []);
-        byStation.get(station)!.push(row.id as number);
-      }
-      const jobs: Array<{
-        order_id: number;
-        station: PrintStation;
-        kind: 'kitchen' | 'order_summary';
-        payload: { item_ids: number[] };
-      }> = [];
-
-      // 1) Customer copy FIRST, at the cashier printer, so the customer sees
-      //    everything they ordered (kitchen + bar + counter items together)
-      //    before the per-station prep tickets roll out.  No prices — it's a
-      //    preview; the final bill prints at payment time.
-      const allNewIds = [...byStation.values()].flat();
-      if (allNewIds.length > 0) {
-        jobs.push({
-          order_id: orderId,
-          station: 'cashier',
-          kind: 'order_summary',
-          payload: { item_ids: allNewIds },
-        });
-      }
-
-      // 2) Then one prep ticket per station.  stationForCategory routes:
-      //    noodles/fried → kitchen, drinks → bar, everything else → the
-      //    cashier/counter (dim sum, buns, rice, roasted, other).  So the
-      //    kitchen never sees drinks, the bar never sees food, and the
-      //    counter prep ticket excludes noodles/fried and drinks.
-      for (const [station, item_ids] of byStation.entries()) {
-        jobs.push({ order_id: orderId, station, kind: 'kitchen', payload: { item_ids } });
-      }
-
-      if (jobs.length > 0) {
-        await supabase.from('print_jobs').insert(jobs);
-      }
-
-      if (existing) {
-        const b = computeBreakdown(runningSub, settings, existing.discount);
-        await supabase
-          .from('orders')
-          .update({
-            subtotal: b.subtotal,
-            service_charge: b.service_charge,
-            tax: b.tax,
-            rounding: b.rounding,
-            total: b.total,
-            status: 'open',
-          })
-          .eq('id', orderId);
-      }
+      // Routing to kitchen / bar / cashier printers, the per-station print
+      // jobs and the orders-row totals (incl. discount) are all written
+      // inside the send_order() RPC transaction. See migrations/send_order_rpc.sql.
+      const result = data as { order_id: number; existing: boolean };
+      const orderId = result.order_id;
+      const wasExisting = result.existing;
 
       setCart([]);
-      setFlash(existing ? `✓ Added to Table ${tableNo}` : `✓ Order #${orderId} sent to kitchen`);
+      setFlash(wasExisting ? `✓ Added to Table ${tableNo}` : `✓ Order #${orderId} sent to kitchen`);
       setTimeout(() => setFlash(null), 2600);
     } finally {
       setSending(false);
