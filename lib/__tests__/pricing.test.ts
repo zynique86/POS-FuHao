@@ -80,3 +80,30 @@ test('computeBreakdown coerces non-numeric settings to 0 safely', () => {
   assert.equal(b.tax, 0);
   assert.equal(b.total, 100);
 });
+
+// Discount-specific cases from #2 (flat RM, percent-via-caller, total-clamp-to-0
+// when a discount exceeds the charges). The negative-discount clamp lives above.
+const zeroChargeSettings = { sst_pct: 0, service_charge_pct: 0, round_to_5_sen: false };
+
+test('flat discount: subtracts a fixed RM amount from the total', () => {
+  const b = computeBreakdown(100, zeroChargeSettings, 15);
+  assert.equal(b.discount, 15);
+  assert.equal(b.total, 85);
+});
+
+test('percent discount: caller passes the computed RM amount through', () => {
+  // The discount parameter is a flat RM amount; a percent discount is
+  // computed by the caller (see cashier discount modal) and threaded in.
+  const subtotal = 200;
+  const pct = 10;
+  const discountRm = (subtotal * pct) / 100;
+  const b = computeBreakdown(subtotal, zeroChargeSettings, discountRm);
+  assert.equal(b.discount, 20);
+  assert.equal(b.total, 180);
+});
+
+test('discount larger than subtotal clamps the total to 0', () => {
+  const b = computeBreakdown(50, zeroChargeSettings, 200);
+  assert.equal(b.discount, 200);
+  assert.equal(b.total, 0, 'total must not go negative when discount exceeds charges');
+});

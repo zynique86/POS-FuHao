@@ -37,7 +37,7 @@ type ExistingLine = {
   note: string | null;
   kitchen_status: string;
 };
-type ExistingOrder = { id: number; lines: ExistingLine[] };
+type ExistingOrder = { id: number; discount: number; lines: ExistingLine[] };
 
 export default function POSTerminal({
   items: initialItems,
@@ -87,7 +87,7 @@ export default function POSTerminal({
     async function loadExisting() {
       const { data: orders } = await supabase
         .from('orders')
-        .select('id')
+        .select('id, discount')
         .eq('table_number', tableNo)
         .is('paid_at', null)
         .in('status', ['open', 'closed'])
@@ -105,6 +105,7 @@ export default function POSTerminal({
         .order('id');
       setExisting({
         id: order.id,
+        discount: Number(order.discount) || 0,
         lines: (rows ?? []).map((r) => ({
           id: r.id,
           menu_item_id: r.menu_item_id,
@@ -228,7 +229,7 @@ export default function POSTerminal({
     : 0;
   const newSub = sumLines(cart.map((l) => ({ qty: l.qty, price: l.unitPrice })));
   const runningSub = existingSub + newSub;
-  const breakdown = computeBreakdown(runningSub, settings);
+  const breakdown = computeBreakdown(runningSub, settings, existing?.discount ?? 0);
   const newCount = cart.reduce((s, l) => s + l.qty, 0);
 
   // Send
@@ -338,7 +339,7 @@ export default function POSTerminal({
       }
 
       if (existing) {
-        const b = computeBreakdown(runningSub, settings);
+        const b = computeBreakdown(runningSub, settings, existing.discount);
         await supabase
           .from('orders')
           .update({

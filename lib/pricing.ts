@@ -31,7 +31,9 @@ export function computeBreakdown(
   const svc = round2(sub * (Number(settings.service_charge_pct) || 0) / 100);
   const tax = round2((sub + svc) * (Number(settings.sst_pct) || 0) / 100);
   const discountAmount = Math.max(0, round2(Number(discount) || 0));
-  const gross = round2(sub + svc + tax - discountAmount);
+  // Clamp at 0 so a discount larger than the charges never produces a
+  // negative total — the shop may comp an order, never owe the customer.
+  const gross = Math.max(0, round2(sub + svc + tax - discountAmount));
   const total = settings.round_to_5_sen ? roundToNearest5Sen(gross) : gross;
   const rounding = round2(total - gross);
   return {

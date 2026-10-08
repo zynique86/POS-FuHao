@@ -23,6 +23,14 @@ import { businessDayStartISO } from '@/lib/datetime';
 
 type Order = BaseOrder & { items: OrderItem[]; payments: Payment[] };
 
+// Net total for one payment method on an order, summing every row (so
+// split bills count) and letting negative amounts (refunds) subtract.
+function sumByMethod(payments: Payment[], method: PayMethod): number {
+  return payments
+    .filter((p) => p.method === method)
+    .reduce((s, p) => s + Number(p.amount), 0);
+}
+
 type Screen =
   | { kind: 'closed' }
   | { kind: 'menu'; orderId: number }
@@ -104,10 +112,12 @@ export default function CashierPage() {
   }, []);
 
   // Cash sales this shift → used for expected drawer close.
+  // Sum every cash payment on the order so split bills count, and net out
+  // refunds (stored as negative-amount payments) rather than silently
+  // dropping them by taking only the first match.
   const cashSalesToday = useMemo(() => {
     return paidToday.reduce((s, o) => {
-      const cashPay = o.payments.find((p) => p.method === 'cash');
-      return s + (cashPay ? Number(cashPay.amount) : 0);
+      return s + sumByMethod(o.payments, 'cash');
     }, 0);
   }, [paidToday]);
 
@@ -1355,7 +1365,7 @@ function VoidModal({
     const { computeBreakdown } = await import('@/lib/pricing');
     const { fetchSettings } = await import('@/lib/settings');
     const s = await fetchSettings();
-    const b = computeBreakdown(activeSubtotal, s);
+    const b = computeBreakdown(activeSubtotal, s, Number(order.discount) || 0);
 
     await supabase.from('orders').update({
       subtotal: b.subtotal,
