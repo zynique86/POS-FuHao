@@ -20,6 +20,9 @@ import {
 } from '@/lib/types';
 import { removeOrder, changeTable, logItemRemoval } from '@/lib/order-actions';
 import { businessDayStartISO } from '@/lib/datetime';
+import { useSettings } from '@/lib/use-settings';
+import { buildDuitNowPayload } from '@/lib/duitnow';
+import { QRCodeSVG } from 'qrcode.react';
 
 type Order = BaseOrder & { items: OrderItem[]; payments: Payment[] };
 
@@ -1193,21 +1196,7 @@ function PayModal({
       )}
 
       {method === 'duitnow_qr' && (
-        <div className="text-center">
-          <p className="text-sm text-[var(--ink-500)] mb-3">Show this QR to the customer</p>
-          <div className="inline-block p-5 rounded-2xl mb-3"
-               style={{ background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))' }}>
-            <div className="w-48 h-48 bg-white rounded-xl p-3">
-              <div className="w-full h-full bg-[url('data:image/svg+xml;utf8,<svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22><rect%20fill=%22white%22%20width=%2232%22%20height=%2232%22/><g%20fill=%22black%22><rect%20x=%220%22%20y=%220%22%20width=%227%22%20height=%227%22/><rect%20x=%222%22%20y=%222%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%2225%22%20y=%220%22%20width=%227%22%20height=%227%22/><rect%20x=%2227%22%20y=%222%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%220%22%20y=%2225%22%20width=%227%22%20height=%227%22/><rect%20x=%222%22%20y=%2227%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%229%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2213%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2217%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2221%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%229%22%20y=%229%22%20width=%2214%22%20height=%2214%22/><rect%20x=%2211%22%20y=%2211%22%20width=%2210%22%20height=%2210%22%20fill=%22white%22/><rect%20x=%2213%22%20y=%2213%22%20width=%206%22%20height=%206%22/></g></svg>')] bg-contain bg-no-repeat bg-center" />
-            </div>
-          </div>
-          <p className="text-xs text-[var(--ink-400)] mb-4">
-            Placeholder QR — connect Fiuu/iPay88 later for real DuitNow QR
-          </p>
-          <ConfirmBtn onClick={confirm} disabled={busy} busy={busy}>
-            Customer Paid — Confirm
-          </ConfirmBtn>
-        </div>
+        <DuitNowPanel amount={amount} orderId={order.id} busy={busy} onConfirm={confirm} />
       )}
 
       {method === 'card' && (
@@ -1239,6 +1228,77 @@ function PayModal({
         </button>
       )}
     </ModalShell>
+  );
+}
+
+// ─── DuitNow QR ──────────────────────────────────────────────────────────
+// Live QR for the current amount. Reads the merchant's DuitNow registration
+// from `shop_settings`; when any of the three fields (ID, name, city) is
+// unset the panel shows a decorative placeholder instead of rendering an
+// invalid QR a customer's bank app would reject.
+function DuitNowPanel({
+  amount,
+  orderId,
+  busy,
+  onConfirm,
+}: {
+  amount: number;
+  orderId: number;
+  busy: boolean;
+  onConfirm: () => void;
+}) {
+  const settings = useSettings();
+  const merchantId = (settings.duitnow_merchant_id || '').trim();
+  const merchantName = (settings.duitnow_merchant_name || '').trim();
+  const merchantCity = (settings.duitnow_merchant_city || '').trim();
+  const ready = !!(merchantId && merchantName && merchantCity);
+
+  let payload: string | null = null;
+  let payloadError: string | null = null;
+  if (ready) {
+    try {
+      payload = buildDuitNowPayload({
+        merchantId,
+        merchantName,
+        merchantCity,
+        amount,
+        referenceId: String(orderId),
+      });
+    } catch (e) {
+      payloadError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  return (
+    <div className="text-center">
+      <p className="text-sm text-[var(--ink-500)] mb-3">Show this QR to the customer</p>
+      <div
+        className="inline-block p-5 rounded-2xl mb-3"
+        style={{ background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))' }}
+      >
+        <div className="w-48 h-48 bg-white rounded-xl p-3 flex items-center justify-center">
+          {payload ? (
+            <QRCodeSVG value={payload} size={168} level="M" includeMargin={false} />
+          ) : (
+            <div className="w-full h-full bg-[url('data:image/svg+xml;utf8,<svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22><rect%20fill=%22white%22%20width=%2232%22%20height=%2232%22/><g%20fill=%22black%22><rect%20x=%220%22%20y=%220%22%20width=%227%22%20height=%227%22/><rect%20x=%222%22%20y=%222%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%2225%22%20y=%220%22%20width=%227%22%20height=%227%22/><rect%20x=%2227%22%20y=%222%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%220%22%20y=%2225%22%20width=%227%22%20height=%227%22/><rect%20x=%222%22%20y=%2227%22%20width=%223%22%20height=%223%22%20fill=%22white%22/><rect%20x=%229%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2213%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2217%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%2221%22%20y=%222%22%20width=%222%22%20height=%222%22/><rect%20x=%229%22%20y=%229%22%20width=%2214%22%20height=%2214%22/><rect%20x=%2211%22%20y=%2211%22%20width=%2210%22%20height=%2210%22%20fill=%22white%22/><rect%20x=%2213%22%20y=%2213%22%20width=%206%22%20height=%206%22/></g></svg>')] bg-contain bg-no-repeat bg-center" />
+          )}
+        </div>
+      </div>
+      {ready && payload ? (
+        <p className="text-xs text-[var(--ink-400)] mb-4">
+          RM {amount.toFixed(2)} · DuitNow · Order #{orderId}
+        </p>
+      ) : (
+        <p className="text-xs text-[var(--ink-400)] mb-4">
+          {payloadError
+            ? `DuitNow QR unavailable: ${payloadError}`
+            : 'Set DuitNow merchant details in Admin > Settings to generate a scannable QR.'}
+        </p>
+      )}
+      <ConfirmBtn onClick={onConfirm} disabled={busy} busy={busy}>
+        Customer Paid — Confirm
+      </ConfirmBtn>
+    </div>
   );
 }
 
