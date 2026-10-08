@@ -1,12 +1,23 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { fetchSettings } from '@/lib/settings';
 
+// Only allow same-origin, root-relative paths. Rejects protocol-relative
+// (`//foo`), backslash-prefixed (`/\\foo`), and anything that isn't a `/…` path.
+function safeNext(raw: string | null): string {
+  if (!raw) return '/';
+  if (!raw.startsWith('/')) return '/';
+  if (raw.startsWith('//') || raw.startsWith('/\\')) return '/';
+  return raw;
+}
+
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = safeNext(searchParams.get('next'));
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +46,7 @@ export default function LoginPage() {
       setBusy(false);
       return;
     }
-    router.push('/');
+    router.push(next);
     router.refresh();
   }
 

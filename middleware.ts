@@ -1,18 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-
-// ---------------------------------------------------------------------------
-// ★  ADMIN EMAIL LIST — keep in sync with lib/roles.ts  ★
-// ---------------------------------------------------------------------------
-// Middleware runs before Next.js loads any app code, so it can't import
-// from lib/roles.ts (that would pull in client code).  Keep the list
-// identical here.
-const ADMIN_EMAILS = new Set([
-  'ezjiet@gmail.com',
-  'poyee4963@gmail.com',
-  'rickytan5791@gmail.com',
-  'tan523567@gmail.com',
-].map((s) => s.toLowerCase()));
+import { isAdminEmail } from './lib/admin-emails';
 
 // Routes that DON'T need auth.  Everything else does.
 const PUBLIC_PATHS = ['/login'];
@@ -85,8 +73,7 @@ export async function middleware(req: NextRequest) {
 
   // 3. Non-admin user hitting an /admin route → bounce home
   if (user && isAdminRoute) {
-    const email = (user.email ?? '').toLowerCase();
-    if (!ADMIN_EMAILS.has(email)) {
+    if (!isAdminEmail(user.email)) {
       const url = req.nextUrl.clone();
       url.pathname = '/';
       return NextResponse.redirect(url);

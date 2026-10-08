@@ -13,19 +13,11 @@
 
 import { supabase } from './supabase';
 import type { StaffRole } from './types';
+import { ADMIN_EMAILS, isAdminEmail } from './admin-emails';
 
-// -------------------------------------------------------------------------
-// ★  EDIT THIS LIST WHEN YOU HIRE OR PROMOTE PEOPLE  ★
-// -------------------------------------------------------------------------
-
-const ADMIN_EMAILS = [
-  'ezjiet@gmail.com',
-  'poyee4963@gmail.com',
-  'rickytan5791@gmail.com',
-  'tan523567@gmail.com'
-] as const;
-
-// -------------------------------------------------------------------------
+// Re-exported so existing importers of `lib/roles` keep working.
+// ★ Edit the list in lib/admin-emails.ts ★
+export { ADMIN_EMAILS, isAdminEmail };
 
 export type CurrentUser = {
   email: string | null;
@@ -40,10 +32,6 @@ function nameFromEmail(email: string | null): string | null {
   return email.split('@')[0] || email;
 }
 
-function normalise(e: string | null): string {
-  return (e ?? '').trim().toLowerCase();
-}
-
 export async function getCurrentUser(force = false): Promise<CurrentUser> {
   if (cache && !force) return cache;
 
@@ -53,8 +41,7 @@ export async function getCurrentUser(force = false): Promise<CurrentUser> {
   const meta = (user?.user_metadata ?? {}) as { name?: string };
 
   // Role: whitelisted email → admin; everyone else → staff.
-  const isAdmin = ADMIN_EMAILS.map(normalise).includes(normalise(email));
-  const role: StaffRole = isAdmin ? 'admin' : 'staff';
+  const role: StaffRole = isAdminEmail(email) ? 'admin' : 'staff';
 
   // Name: user_metadata.name if set, else email prefix.
   const name = (meta.name && meta.name.trim()) || nameFromEmail(email);
