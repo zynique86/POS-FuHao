@@ -880,5 +880,8 @@ module.exports = {
     };
     return map[(category || '').trim().toLowerCase()] ?? 'cashier';
   },
+  // Exposed for unit tests — these are pure helpers with no I/O.
+  say,
+  hasRealName,
   __setTestClient,
 };
