@@ -19,6 +19,7 @@ import {
   type PayMethod,
 } from '@/lib/types';
 import { removeOrder, changeTable, logItemRemoval } from '@/lib/order-actions';
+import { businessDayStartISO } from '@/lib/datetime';
 
 type Order = BaseOrder & { items: OrderItem[]; payments: Payment[] };
 
@@ -58,7 +59,7 @@ export default function CashierPage() {
         .from('orders')
         .select('*')
         .not('paid_at', 'is', null)
-        .gte('paid_at', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
+        .gte('paid_at', businessDayStartISO())
         .order('paid_at', { ascending: false })
         .limit(20),
     ]);
@@ -414,6 +415,17 @@ function OpenShiftModal({ onCancel, onDone }: { onCancel: () => void; onDone: ()
       await openShift(n, by);
       onDone();
     } catch (e: unknown) {
+      // Another cashier may have just opened a shift at the same moment.
+      // Postgres code 23505 (unique_violation) comes back from the new
+      // `shift_opens_business_date_open_uniq` index — treat it as a quiet
+      // refresh instead of a scary error.
+      const code = (typeof e === 'object' && e !== null && 'code' in e)
+        ? String((e as { code: unknown }).code)
+        : '';
+      if (code === '23505') {
+        onDone();
+        return;
+      }
       const msg = e instanceof Error ? e.message : 'Failed to open shift';
       setErr(msg);
       setBusy(false);

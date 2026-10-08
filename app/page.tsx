@@ -1,7 +1,7 @@
-import { supabase } from '@/lib/supabase';
-import { fetchSettings } from '@/lib/settings';
+import { createClient } from '@/lib/supabase-server';
+import { FALLBACK_SETTINGS } from '@/lib/settings';
 import POSTerminal from './pos-terminal';
-import type { MenuItem } from '@/lib/types';
+import type { MenuItem, ShopSettings } from '@/lib/types';
 
 // Force fresh SSR on every request so newly-added items and freshly-uploaded
 // photos show up without waiting for a Vercel rebuild or a cache purge.
@@ -9,13 +9,19 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default async function Home() {
-  const [{ data: items, error }, settings] = await Promise.all([
+  const supabase = await createClient();
+
+  const [{ data: items, error }, { data: settingsRow }] = await Promise.all([
     supabase
       .from('menu_items')
       .select('*')
       .order('category')
       .order('id'),
-    fetchSettings(),
+    supabase
+      .from('shop_settings')
+      .select('*')
+      .eq('id', 1)
+      .single(),
   ]);
 
   if (error) {
@@ -37,7 +43,7 @@ export default async function Home() {
   return (
     <POSTerminal
       items={(items ?? []) as MenuItem[]}
-      settings={settings}
+      settings={(settingsRow as ShopSettings) ?? FALLBACK_SETTINGS}
     />
   );
 }

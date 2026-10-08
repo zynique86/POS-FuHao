@@ -190,7 +190,13 @@ function finish(printer) {
 }
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Printer service MUST use the service-role key.  It reads print_jobs that
+// RLS hides from the anon key and marks them printed from a trusted machine
+// behind the counter, not from a browser — the anon key cannot do either
+// safely.  No fallback: a misconfigured service that silently drops to anon
+// would appear to work (jobs enqueue, nothing prints) and quietly leak the
+// anon surface area to a device nobody is watching.
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const FALLBACK_SHOP_NAME = process.env.SHOP_NAME || 'DIM SUM SHOP';
 
 const LEGACY_PRINTER_IP = process.env.PRINTER_IP;
@@ -203,12 +209,22 @@ const PRINTERS = {
 // When this file is run directly it needs real Supabase credentials.  When it
 // is required by a test harness, the test injects a fake client via
 // __setTestClient() instead, so missing env vars there are fine.
-if (require.main === module && (!SUPABASE_URL || !SUPABASE_ANON_KEY)) {
-  console.error('❌ Missing SUPABASE_URL or SUPABASE_ANON_KEY in .env');
-  process.exit(1);
+if (require.main === module) {
+  if (!SUPABASE_URL) {
+    console.error('❌ Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) in .env');
+    process.exit(1);
+  }
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('❌ Missing SUPABASE_SERVICE_ROLE_KEY in .env');
+    console.error('   The printer service MUST use the service-role key, not the anon key.');
+    console.error('   Copy it from Supabase > Project Settings > API > service_role.');
+    process.exit(1);
+  }
 }
-let supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+let supabase = (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
   : null;
 
 // --- settings cache --------------------------------------------------------
