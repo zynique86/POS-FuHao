@@ -17,6 +17,7 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const { createDriver } = require('./drivers');
+const layouts = require('./layouts');
 
 // ---------------------------------------------------------------------------
 // Keep the service alive no matter what.
@@ -70,6 +71,20 @@ const PREORDER_PHONES = (process.env.PREORDER_PHONES || '0135711396, 0174968928'
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
+
+// Business-day timezone for date/receipt-number rendering.  Defaults to the
+// one lib/datetime.ts already uses so a cashier opening a browser from
+// another TZ still sees the shop's actual business day.
+const BUSINESS_TZ = process.env.BUSINESS_TZ || 'Asia/Kuala_Lumpur';
+
+// Map our three internal routing keys to the printed station label the
+// kitchen mockup footer expects (and that an expeditor can read at a
+// glance).  Overridable per-station via env for a kitchen with named lines.
+const STATION_LABELS = {
+  kitchen: process.env.KITCHEN_STATION_LABEL || 'GRILL',
+  cashier: process.env.CASHIER_STATION_LABEL || 'DIM-SUM',
+  bar:     process.env.BAR_STATION_LABEL     || 'BAR',
+};
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 // Printer service MUST use the service-role key.  It reads print_jobs that
@@ -134,6 +149,10 @@ let settings = {
   shop_name: FALLBACK_SHOP_NAME,
   shop_name_zh: '',
   address: '',
+  phone: '',
+  tax_id: '',
+  wifi_ssid: '',
+  wifi_password: '',
   sst_pct: 0,
   service_charge_pct: 0,
   round_to_5_sen: true,
@@ -146,6 +165,12 @@ async function refreshSettings() {
       shop_name: data.shop_name || FALLBACK_SHOP_NAME,
       shop_name_zh: data.shop_name_zh || '',
       address: data.address || '',
+      // Optional fields — may not be in the schema today, which is fine:
+      // reading an absent column returns undefined and we drop the line.
+      phone: data.phone || '',
+      tax_id: data.tax_id || '',
+      wifi_ssid: data.wifi_ssid || '',
+      wifi_password: data.wifi_password || '',
       sst_pct: Number(data.sst_pct) || 0,
       service_charge_pct: Number(data.service_charge_pct) || 0,
       round_to_5_sen: !!data.round_to_5_sen,
@@ -203,22 +228,26 @@ async function handleKitchen(job, station) {
   ]);
   if (!order || !items || items.length === 0) return;
 
-  const stationName =
-    station === 'bar'     ? 'BAR / 水吧'            :
-    station === 'cashier' ? 'FRONT KITCHEN / 前廚'  :
-                            'BACK KITCHEN / 後廚';
-
   console.log(
     `   → ${station.toUpperCase()} getting: ${items.map(i => i.name_snapshot).join(', ')}`
   );
 
-  await driverFor(station).printKitchen({
-    stationName,
-    tableNumber: order.table_number,
-    orderId: order.id,
-    timeStr: new Date().toLocaleTimeString('en-MY'),
+  const layout = station === 'bar' ? layouts.bar : layouts.kitchen;
+  const entries = layout.build({
+    headerLabel: station === 'bar' ? '[BAR ORDER]' : '[KITCHEN TICKET]',
+    stationLabel: STATION_LABELS[station] || station.toUpperCase(),
+    order: {
+      id: order.id,
+      table: order.table_number,
+      type: order.order_type || 'Dine-In',
+      server: order.taken_by_name,
+    },
     items: items.map(itemView),
+    tz: BUSINESS_TZ,
+    now: new Date(),
   });
+
+  await driverFor(station).printLayout(entries, `${station} ticket`);
   console.log(`🖨️  ${station} ticket printed for order #${order.id} (${items.length} items)`);
 }
 
@@ -271,29 +300,47 @@ async function handleReceipt(job, station) {
 
   const addressLines = (settings.address || '').split('\n').map((l) => l.trim()).filter(Boolean);
 
-  await driverFor(station).printReceipt({
-    isReprint,
-    shopName: settings.shop_name,
-    shopNameZh: settings.shop_name_zh,
-    addressLines,
-    tableNumber: order.table_number,
-    orderId: order.id,
-    when: new Date().toLocaleString('en-MY'),
-    takenByName: order.taken_by_name,
+  const entries = layouts.receipt.build({
+    shop: {
+      name: settings.shop_name,
+      nameZh: settings.shop_name_zh,
+      addressLines,
+      phone: settings.phone,
+      taxId: settings.tax_id,
+    },
+    order: {
+      id: order.id,
+      table: order.table_number,
+      type: order.order_type || 'Dine-In',
+      server: order.taken_by_name,
+    },
     items: items.map(itemView),
-    subtotal,
-    svcLabel: `Service${settings.service_charge_pct ? ' ' + settings.service_charge_pct + '%' : ''}`,
-    svc,
-    taxLabel: `SST${settings.sst_pct ? ' ' + settings.sst_pct + '%' : ''}`,
-    tax,
-    discount,
-    discountReason: order.discount_reason,
-    rounding,
-    total,
-    method,
-    received,
-    change,
+    totals: {
+      subtotal,
+      serviceCharge: svc,
+      serviceChargePct: settings.service_charge_pct || undefined,
+      tax,
+      taxPct: settings.sst_pct || undefined,
+      discount,
+      discountReason: order.discount_reason,
+      rounding,
+      total,
+    },
+    payment: {
+      method: String(method || '').toUpperCase(),
+      amountPaid: received,
+      changeDue: change,
+    },
+    footer: {
+      wifiSsid: settings.wifi_ssid,
+      wifiPassword: settings.wifi_password,
+    },
+    tz: BUSINESS_TZ,
+    now: new Date(),
+    isReprint,
   });
+
+  await driverFor(station).printLayout(entries, isReprint ? 'receipt (reprint)' : 'receipt');
   console.log(`🖨️  Receipt printed for order #${order.id}${isReprint ? ' (reprint)' : ''}`);
 }
 

@@ -17,6 +17,7 @@
 
 const { ThermalPrinter, PrinterTypes } = require('node-thermal-printer');
 const iconv = require('iconv-lite');
+const format = require('../layouts/format');
 
 const CJK_REGEX = /[㐀-鿿豈-﫿]/;
 const FS_AND    = Buffer.from([0x1C, 0x26]);  // enter Kanji mode
@@ -513,6 +514,42 @@ function create(config) {
     await executeWithRetry(printer, `restock slip`);
   }
 
+  // ---------- GENERIC LAYOUT RENDERER --------------------------------------
+  // Takes an array of entries (see printer-service/layouts/receipt.js for the
+  // contract) and plays them against node-thermal-printer.  All ticket-shape
+  // decisions live in the pure layouts; this method is the only place the
+  // ESC/POS plumbing (bold, align, feed, cut) touches the hardware.
+  async function printLayout(entries, label = 'ticket') {
+    const list = Array.isArray(entries) ? entries : [];
+    const printer = makePrinter();
+    if (!printer) {
+      const lines = list.map((e) => format.entryText(e));
+      return consoleFallback(label, lines);
+    }
+    for (const e of list) renderEntry(printer, e);
+    await executeWithRetry(printer, label);
+  }
+
+  function renderEntry(printer, e) {
+    if (e == null) return;
+    if (typeof e === 'string') {
+      printer.alignLeft();
+      say(printer, e);
+      return;
+    }
+    if (e.rule) { printer.alignLeft(); printer.println(format.line(e.rule, width)); return; }
+    if (e.feed != null) { for (let i = 0; i < Number(e.feed) || 0; i++) printer.newLine(); return; }
+    if (e.cut) { printer.cut(); return; }
+    if (e.align === 'center') printer.alignCenter();
+    else if (e.align === 'right') printer.alignRight();
+    else printer.alignLeft();
+    if (e.bold)   printer.bold(true);
+    if (e.double) printer.setTextSize(1, 1);
+    say(printer, String(e.text ?? ''));
+    if (e.double) printer.setTextNormal();
+    if (e.bold)   printer.bold(false);
+  }
+
   // ---------- DRAWER / STATUS ----------------------------------------------
   async function openDrawer() {
     const printer = makePrinter();
@@ -542,6 +579,7 @@ function create(config) {
     printVoid,
     printRefund,
     printRestock,
+    printLayout,
     openDrawer,
     status,
   };

@@ -20,6 +20,10 @@ Copy these into `.env` beside `index.js`. **Never commit `.env`.**
 | `RECEIPT_WIDTH` | optional | Columns per line (default 42). |
 | `PREORDER_PHONES` | optional | Comma-separated phone numbers printed at the foot of each receipt. |
 | `PRINT_CHINESE` | optional | `true` to send GB18030 CJK; default is English-only. |
+| `BUSINESS_TZ` | optional | IANA timezone used for the receipt date and the `YYYYMMDD-NNNN` receipt number (default `Asia/Kuala_Lumpur`). |
+| `KITCHEN_STATION_LABEL` | optional | Footer station label on kitchen tickets (default `GRILL`). |
+| `CASHIER_STATION_LABEL` | optional | Footer station label on front-kitchen tickets (default `DIM-SUM`). |
+| `BAR_STATION_LABEL` | optional | Footer station label on bar tickets (default `BAR`). |
 
 ## Why service-role?
 
@@ -39,3 +43,24 @@ node index.js
 ```
 
 Keep it supervised (systemd, pm2, etc.) so it restarts after power cuts.
+
+## Previewing layouts
+
+The customer receipt, kitchen ticket, and bar ticket layouts live in
+`printer-service/layouts/` as pure functions — no Supabase, no printer, no
+network. The preview CLI exercises them against a canonical fixture that
+matches the mockups so you can eyeball exactly what the printer will emit
+before loading paper:
+
+```
+node printer-service/bin/preview.js receipt
+node printer-service/bin/preview.js kitchen
+node printer-service/bin/preview.js bar
+node printer-service/bin/preview.js all      # the default
+```
+
+Every line is capped at 42 columns (3-column safety margin on each side of
+48-col 80mm paper); the `WIDTH` constant in `layouts/format.js` is the single
+source of truth. The byte-exact snapshots in
+`printer-service/__tests__/layouts.test.js` and an `assertWidth` guard enforce
+both rules on every PR.
