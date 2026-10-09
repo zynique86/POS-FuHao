@@ -65,7 +65,7 @@ export default function Dashboard() {
       supabase.from('orders').select('*').gte('paid_at', yestStart.toISOString()).lt('paid_at', todayStart.toISOString()),
       supabase.from('order_items').select('id, order_id, name_snapshot, qty, price_at_time, voided_at').gte('created_at', todayStart.toISOString()),
       supabase.from('payments').select('id, method, amount, created_at').gte('created_at', todayStart.toISOString()),
-      supabase.from('orders').select('*').is('paid_at', null),
+      supabase.from('orders').select('*').is('paid_at', null).neq('status', 'void'),
     ]);
 
     setTodayOrders((todayRes.data ?? []) as OrderRow[]);
@@ -89,7 +89,7 @@ export default function Dashboard() {
       const p = new Date(o.paid_at).getTime();
       return p >= y && p < t;
     };
-    const isOpen = (o: OrderRow) => o.paid_at == null;
+    const isOpen = (o: OrderRow) => o.paid_at == null && o.status !== 'void';
 
     const res = applyRowEventBuckets(
       { today: todayOrders, yest: yestOrders, open: openOrders },
