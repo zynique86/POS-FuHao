@@ -136,6 +136,12 @@ export type ShopSettings = {
   sst_pct: number;
   service_charge_pct: number;
   round_to_5_sen: boolean;
+  // Optional DuitNow merchant details — unset until the shop supplies them
+  // in Admin > Settings. When any of these is missing the cashier screen
+  // shows a decorative placeholder instead of generating an invalid QR.
+  duitnow_merchant_id?: string | null;
+  duitnow_merchant_name?: string | null;
+  duitnow_merchant_city?: string | null;
   updated_at: string;
 };
 

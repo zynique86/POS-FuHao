@@ -6,6 +6,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import {
+  applyRowEvent,
+  applyRowEventBuckets,
+  type RealtimePayload,
+} from '@/lib/realtime-reducers';
 
 type OrderRow = {
   id: number;
@@ -17,7 +22,11 @@ type OrderRow = {
   created_at: string;
   status: string;
 };
+// Item/payment rows arrive via `.select('order_id, …')` with the subset of
+// columns the dashboard needs; `id` is added here so Realtime payloads can
+// be reduced into the local list. Realtime push payloads always include it.
 type ItemRow = {
+  id: number;
   order_id: number;
   name_snapshot: string;
   qty: number;
@@ -25,6 +34,7 @@ type ItemRow = {
   voided_at: string | null;
 };
 type PaymentRow = {
+  id: number;
   method: string;
   amount: number;
   created_at: string;
@@ -39,19 +49,23 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [pulse, setPulse] = useState(0);
 
-  async function loadAll() {
-    const now = new Date();
-    const todayStart = new Date(now);
+  function windows() {
+    const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const yestStart = new Date(todayStart);
     yestStart.setDate(yestStart.getDate() - 1);
+    return { todayStart, yestStart };
+  }
+
+  async function loadAll() {
+    const { todayStart, yestStart } = windows();
 
     const [todayRes, yestRes, itemsRes, paysRes, openRes] = await Promise.all([
       supabase.from('orders').select('*').gte('paid_at', todayStart.toISOString()),
       supabase.from('orders').select('*').gte('paid_at', yestStart.toISOString()).lt('paid_at', todayStart.toISOString()),
-      supabase.from('order_items').select('order_id, name_snapshot, qty, price_at_time, voided_at').gte('created_at', todayStart.toISOString()),
-      supabase.from('payments').select('method, amount, created_at').gte('created_at', todayStart.toISOString()),
-      supabase.from('orders').select('*').is('paid_at', null),
+      supabase.from('order_items').select('id, order_id, name_snapshot, qty, price_at_time, voided_at').gte('created_at', todayStart.toISOString()),
+      supabase.from('payments').select('id, method, amount, created_at').gte('created_at', todayStart.toISOString()),
+      supabase.from('orders').select('*').is('paid_at', null).neq('status', 'void'),
     ]);
 
     setTodayOrders((todayRes.data ?? []) as OrderRow[]);
@@ -63,17 +77,81 @@ export default function Dashboard() {
     setPulse((p) => p + 1);
   }
 
+  function handleOrderEvent(payload: RealtimePayload<OrderRow>) {
+    const { todayStart, yestStart } = windows();
+    const t = todayStart.getTime();
+    const y = yestStart.getTime();
+
+    const isToday = (o: OrderRow) =>
+      o.paid_at != null && new Date(o.paid_at).getTime() >= t;
+    const isYest = (o: OrderRow) => {
+      if (o.paid_at == null) return false;
+      const p = new Date(o.paid_at).getTime();
+      return p >= y && p < t;
+    };
+    const isOpen = (o: OrderRow) => o.paid_at == null && o.status !== 'void';
+
+    const res = applyRowEventBuckets(
+      { today: todayOrders, yest: yestOrders, open: openOrders },
+      payload,
+      { today: isToday, yest: isYest, open: isOpen },
+    );
+    if (!res.ok) {
+      console.warn('[admin] orders reducer fell back to refetch:', res.reason);
+      loadAll();
+      return;
+    }
+    setTodayOrders(res.state.today);
+    setYestOrders(res.state.yest);
+    setOpenOrders(res.state.open);
+    setPulse((p) => p + 1);
+  }
+
+  function handleItemEvent(payload: RealtimePayload<ItemRow>) {
+    setItems((prev) => {
+      const res = applyRowEvent(prev, payload);
+      if (!res.ok) {
+        console.warn('[admin] order_items reducer fell back to refetch:', res.reason);
+        loadAll();
+        return prev;
+      }
+      return res.rows;
+    });
+    setPulse((p) => p + 1);
+  }
+
+  function handlePaymentEvent(payload: RealtimePayload<PaymentRow>) {
+    setPayments((prev) => {
+      const res = applyRowEvent(prev, payload);
+      if (!res.ok) {
+        console.warn('[admin] payments reducer fell back to refetch:', res.reason);
+        loadAll();
+        return prev;
+      }
+      return res.rows;
+    });
+    setPulse((p) => p + 1);
+  }
+
   useEffect(() => {
     loadAll();
     const channel = supabase
       .channel('admin-dashboard')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => loadAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => loadAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => loadAll())
-      .subscribe();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' },
+        (p) => handleOrderEvent(p as unknown as RealtimePayload<OrderRow>))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' },
+        (p) => handleItemEvent(p as unknown as RealtimePayload<ItemRow>))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' },
+        (p) => handlePaymentEvent(p as unknown as RealtimePayload<PaymentRow>))
+      .subscribe((status) => {
+        // Full refetch on (re)connect so we don't miss events that fired
+        // between the socket dropping and resubscribing.
+        if (status === 'SUBSCRIBED') loadAll();
+      });
     return () => {
       supabase.removeChannel(channel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const stats = useMemo(() => computeStats({ todayOrders, yestOrders, items, payments, openOrders }), [
