@@ -16,6 +16,7 @@
 
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
+const iconv = require('iconv-lite');
 const { createDriver } = require('./drivers');
 const layouts = require('./layouts');
 
@@ -66,6 +67,41 @@ const RECEIPT_WIDTH = Number(process.env.RECEIPT_WIDTH) || 42;
 // Chinese — they print garbage bytes instead. So by DEFAULT we print English
 // only. Set PRINT_CHINESE=true in .env on a printer that actually supports it.
 const PRINT_CHINESE = process.env.PRINT_CHINESE === 'true';
+
+const CJK_REGEX = /[㐀-鿿豈-﫿]/;
+const FS_AND    = Buffer.from([0x1C, 0x26]);  // enter Kanji mode
+const FS_DOT    = Buffer.from([0x1C, 0x2E]);  // exit Kanji mode
+const LF        = Buffer.from([0x0A]);
+const CJK_STRIP = /[⺀-鿿豈-﫿＀-￯]/g;
+
+// Print one line — CJK is either sent as GB18030 in Kanji mode (when the
+// printer supports it) or stripped so the English stays readable. Mirrors
+// the copy inside drivers/tcp.js (which the real driver uses); kept here as
+// a pure helper so it can be unit tested without touching a printer.
+function say(printer, text) {
+  if (text == null || text === '') { printer.newLine(); return; }
+  const s = String(text);
+
+  if (!PRINT_CHINESE) {
+    let ascii = s.replace(CJK_STRIP, '');
+    ascii = ascii.replace(/ +([,.;:])/g, '$1');
+    ascii = ascii.replace(/(\S) {2,}/g, '$1 ');
+    ascii = ascii.replace(/[\s/·|]+$/g, '');
+    ascii = ascii.replace(/[ \t]+$/g, '');
+    if (!/[A-Za-z0-9]/.test(ascii)) return;
+    printer.println(ascii);
+    return;
+  }
+
+  if (!CJK_REGEX.test(s)) {
+    printer.println(s);
+    return;
+  }
+  printer.raw(FS_AND);
+  printer.raw(iconv.encode(s, 'gb18030'));
+  printer.raw(FS_DOT);
+  printer.raw(LF);
+}
 
 const PREORDER_PHONES = (process.env.PREORDER_PHONES || '0135711396, 0174968928')
   .split(',')
