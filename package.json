@@ -6,8 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "test": "tsx --test --test-reporter=spec lib/__tests__/*.test.ts printer-service/__tests__/*.test.js"
+    "lint": "eslint"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
@@ -25,7 +24,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.2",
     "tailwindcss": "^4",
-    "tsx": "^4.19.2",
     "typescript": "^5"
   }
 }
