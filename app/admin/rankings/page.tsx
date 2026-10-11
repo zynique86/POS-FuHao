@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { AdminPageHeader, ContentCard, ErrorBanner, EmptyState } from '@/components/ui';
 import { MENU_CATEGORIES, type MenuItem, type OrderItem } from '@/lib/types';
+import { businessDateStartISO, nextDateISO } from '@/lib/datetime';
 
 type RangeKey = 'today' | 'week' | 'month' | 'custom';
 
@@ -53,11 +54,14 @@ export default function RankingsPage() {
     setLoading(true);
     setErr(null);
     try {
+      // Boundaries are the shop's own business-day midnight (Asia/Kuala_Lumpur
+      // is UTC+8), not raw UTC — otherwise orders from the first ~8 hours of
+      // the day could be attributed to the wrong side of the range.
       const oRes = await supabase
         .from('orders')
         .select('id, paid_at, status, voided_at')
-        .gte('paid_at', `${start}T00:00:00Z`)
-        .lte('paid_at', `${end}T23:59:59Z`)
+        .gte('paid_at', businessDateStartISO(start))
+        .lt('paid_at',  businessDateStartISO(nextDateISO(end)))
         .not('paid_at', 'is', null);
       if (oRes.error) throw oRes.error;
 

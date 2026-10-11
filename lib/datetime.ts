@@ -45,3 +45,26 @@ export function businessDayStart(tz: string = BUSINESS_TZ_DEFAULT, now: Date = n
 export function businessDayStartISO(tz: string = BUSINESS_TZ_DEFAULT, now: Date = new Date()): string {
   return businessDayStart(tz, now).toISOString();
 }
+
+// Convert a calendar date (YYYY-MM-DD, as picked by an owner in a <input
+// type="date"> for a report) to the UTC instant of that date's local
+// midnight in `tz`. Reports that filter by a date *range* (monthly P&L,
+// rankings) need this instead of raw `${date}T00:00:00Z` — a plain UTC
+// boundary is 8 hours off from Kuala Lumpur local time and can misattribute
+// orders placed in the first ~8 hours of a business day/month.
+export function businessDateStartISO(dateISO: string, tz: string = BUSINESS_TZ_DEFAULT): string {
+  const [y, m, d] = dateISO.split('-').map(Number);
+  // Noon UTC lands on the same calendar day in `tz` for any real-world
+  // timezone offset (-12..+14), so it's a safe reference instant: handing
+  // it to businessDayStart() gives that day's local midnight.
+  const noonUTC = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  return businessDayStart(tz, noonUTC).toISOString();
+}
+
+// The calendar date (YYYY-MM-DD) after `dateISO` — the exclusive upper
+// bound for a single-day report query, e.g.
+// `.gte(businessDateStartISO(date)).lt(businessDateStartISO(nextDateISO(date)))`.
+export function nextDateISO(dateISO: string): string {
+  const [y, m, d] = dateISO.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
