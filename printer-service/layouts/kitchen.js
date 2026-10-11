@@ -13,8 +13,8 @@
 // emit the plain-text form so the fallback and the tests stay byte-exact.
 
 const {
-  WIDTH, DEFAULT_TZ, line, centre, twoCol, wrap,
-  fmtDate, fmtTime, ticketNumber,
+  WIDTH, DEFAULT_TZ, twoCol, wrap,
+  fmtTime, ticketNumber,
 } = require('./format');
 
 const TEMP_RE = /^(temp|doneness|cook)\s*[:\-]\s*(.+)$/i;

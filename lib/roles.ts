@@ -53,21 +53,3 @@ export async function getCurrentUser(force = false): Promise<CurrentUser> {
 export function clearRoleCache() {
   cache = null;
 }
-
-// Capability check — admin can do anything, staff blocked from admin pages.
-export type Capability =
-  | 'view_pos' | 'view_kitchen' | 'view_bar' | 'view_cashier'
-  | 'view_admin' | 'view_reports' | 'view_profit'
-  | 'edit_menu' | 'edit_expenses' | 'edit_settings'
-  | 'void' | 'refund' | 'discount' | 'change_price';
-
-const ADMIN_ONLY: Capability[] = [
-  'view_admin', 'view_reports', 'view_profit',
-  'edit_menu', 'edit_expenses', 'edit_settings',
-  'change_price',
-];
-
-export function can(role: StaffRole, capability: Capability): boolean {
-  if (role === 'admin') return true;
-  return !ADMIN_ONLY.includes(capability);
-}

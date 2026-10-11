@@ -6,8 +6,8 @@
 // transport later, write a sibling file exposing the same methods.
 //
 // Shape returned by create():
-//   { printKitchen, printOrderSummary, printReceipt, printVoid,
-//     printRefund, printRestock, openDrawer, status }
+//   { printOrderSummary, printVoid, printRefund, printRestock,
+//     printLayout, openDrawer, status }
 //
 // Config:
 //   { transport: 'tcp', ip, station, width, printChinese, timeout, preorderPhones }
@@ -77,9 +77,6 @@ function create(config) {
     preorderPhones = [],
   } = config || {};
 
-  const COL_L = 0.62;
-  const COL_R = 0.38;
-
   function makePrinter() {
     if (!ip) return null;
     return new ThermalPrinter({
@@ -132,15 +129,6 @@ function create(config) {
     printer.raw(LF);
   }
 
-  function amountRow(printer, label, value, bold = false) {
-    if (bold) printer.bold(true);
-    printer.tableCustom([
-      { text: String(label), width: COL_L },
-      { text: money(value), width: COL_R, align: 'RIGHT' },
-    ]);
-    if (bold) printer.bold(false);
-  }
-
   function printExtras(printer, item) {
     if (item.options) say(printer, `   - ${item.options}`);
     if (item.note)    say(printer, `   - ${item.note}`);
@@ -155,67 +143,6 @@ function create(config) {
 
   function consoleFallback(kind, lines) {
     console.log(`\n${stationLabel(station)} · ${kind.toUpperCase()} (would print — no IP configured):\n` + lines.join('\n') + '\n');
-  }
-
-  // ---------- KITCHEN / BAR / FRONT prep ticket ------------------------------
-  async function printKitchen(ticket) {
-    const { stationName, tableNumber, orderId, timeStr, items } = ticket;
-    const lines = [
-      '===================================',
-      `           ${stationName}`,
-      '===================================',
-      `TABLE ${tableNumber}   Order #${orderId}`,
-      timeStr,
-      '-----------------------------------',
-      ...items.flatMap((i) => {
-        const rows = [`  ${i.qty}x  ${i.name}`];
-        if (hasRealName(i.nameZh)) rows.push(`         ${i.nameZh}`);
-        if (i.options) rows.push(`         >> ${i.options}`);
-        if (i.note)    rows.push(`         >> NOTE: ${i.note}`);
-        return rows;
-      }),
-      '===================================',
-    ];
-
-    const printer = makePrinter();
-    if (!printer) return consoleFallback('kitchen', lines);
-
-    printer.alignCenter();
-    printer.bold(true);
-    printer.setTextSize(1, 1);
-    say(printer, stationName);
-    printer.setTextNormal();
-    printer.bold(false);
-    printer.println(`TABLE ${tableNumber}`);
-    printer.println(`Order #${orderId}`);
-    printer.println(timeStr);
-    printer.drawLine();
-    printer.alignLeft();
-    items.forEach((i) => {
-      printer.bold(true);
-      say(printer, `[ ] ${i.qty}x  ${i.name}`);
-      printer.bold(false);
-      if (hasRealName(i.nameZh)) say(printer, `       ${i.nameZh}`);
-      if (i.options) {
-        printer.bold(true);
-        say(printer, `       >> ${i.options}`);
-        printer.bold(false);
-      }
-      if (i.note) {
-        printer.bold(true);
-        say(printer, `       >> NOTE: ${i.note}`);
-        printer.bold(false);
-      }
-    });
-    printer.drawLine();
-    printer.alignCenter();
-    printer.bold(true);
-    printer.setTextSize(1, 1);
-    say(printer, '[  ]  ALL DONE  完成');
-    printer.setTextNormal();
-    printer.bold(false);
-    finish(printer);
-    await executeWithRetry(printer, `${station} kitchen ticket`);
   }
 
   // ---------- CUSTOMER COPY (no prices) -------------------------------------
@@ -277,121 +204,6 @@ function create(config) {
     finish(printer);
 
     await executeWithRetry(printer, `customer copy`);
-  }
-
-  // ---------- RECEIPT -------------------------------------------------------
-  async function printReceipt(receipt) {
-    const {
-      isReprint, shopName, shopNameZh, addressLines, tableNumber, orderId,
-      when, takenByName, items, subtotal, svcLabel, svc, taxLabel, tax,
-      discount, discountReason, rounding, total, method, received, change,
-    } = receipt;
-
-    const lines = [
-      centerText(shopName, width),
-      ...(hasRealName(shopNameZh) ? [centerText(shopNameZh, width)] : []),
-      ...addressLines.map((l) => centerText(l, width)),
-      centerText(isReprint ? 'RECEIPT (REPRINT)' : 'RECEIPT', width),
-      '='.repeat(width),
-      padRow(`Table ${tableNumber}`, `Order #${orderId}`, width),
-      when,
-      ...(hasRealName(takenByName) ? [`Served by: ${takenByName}`] : []),
-      '-'.repeat(width),
-      padRow('ITEM', 'RM', width),
-      '-'.repeat(width),
-    ];
-    items.forEach((i) => {
-      lines.push(padRow(`${i.qty} x ${i.name}`, money(Number(i.priceAtTime) * i.qty), width));
-      if (hasRealName(i.nameZh)) lines.push(`   ${i.nameZh}`);
-      if (i.options) lines.push(`   - ${i.options}`);
-      if (i.note)    lines.push(`   - ${i.note}`);
-    });
-    lines.push('-'.repeat(width));
-    lines.push(padRow('Subtotal', money(subtotal), width));
-    if (svc > 0) lines.push(padRow(svcLabel, money(svc), width));
-    if (tax > 0) lines.push(padRow(taxLabel, money(tax), width));
-    if (discount > 0) lines.push(padRow(`Discount${discountReason ? ' (' + discountReason + ')' : ''}`, money(-discount), width));
-    if (rounding !== 0) lines.push(padRow('Rounding', money(rounding), width));
-    lines.push('='.repeat(width));
-    lines.push(padRow('TOTAL', money(total), width));
-    lines.push('='.repeat(width));
-    lines.push(padRow('Payment', String(method).toUpperCase(), width));
-    if (received != null) lines.push(padRow('Cash', money(received), width));
-    if (change != null) lines.push(padRow('Change', money(change), width));
-    lines.push('');
-    lines.push(centerText('Thank You! 多謝惠顧', width));
-    lines.push(centerText('Please come again', width));
-    lines.push('');
-    lines.push(centerText('Pre-order 預訂:', width));
-    lines.push(centerText(preorderPhones.join('   '), width));
-
-    const printer = makePrinter();
-    if (!printer) return consoleFallback('receipt', lines);
-
-    printer.alignCenter();
-    printer.bold(true);
-    printer.setTextSize(1, 1);
-    say(printer, shopName);
-    printer.setTextNormal();
-    if (hasRealName(shopNameZh)) say(printer, shopNameZh);
-    printer.bold(false);
-    addressLines.forEach((l) => say(printer, l));
-    printer.newLine();
-    printer.bold(true);
-    say(printer, isReprint ? 'RECEIPT (REPRINT)' : 'RECEIPT');
-    printer.bold(false);
-    printer.drawLine();
-
-    printer.alignLeft();
-    printer.leftRight(`Table ${tableNumber}`, `Order #${orderId}`);
-    printer.println(when);
-    if (hasRealName(takenByName)) printer.println(`Served by: ${takenByName}`);
-    printer.drawLine();
-
-    printer.bold(true);
-    printer.tableCustom([
-      { text: 'ITEM', width: COL_L },
-      { text: 'RM', width: COL_R, align: 'RIGHT' },
-    ]);
-    printer.bold(false);
-    printer.drawLine();
-
-    items.forEach((i) => {
-      printer.tableCustom([
-        { text: `${i.qty} x ${i.name}`, width: COL_L },
-        { text: money(Number(i.priceAtTime) * i.qty), width: COL_R, align: 'RIGHT' },
-      ]);
-      if (hasRealName(i.nameZh)) say(printer, `   ${i.nameZh}`);
-      printExtras(printer, i);
-    });
-
-    printer.drawLine();
-    amountRow(printer, 'Subtotal', subtotal);
-    if (svc > 0) amountRow(printer, svcLabel, svc);
-    if (tax > 0) amountRow(printer, taxLabel, tax);
-    if (discount > 0) amountRow(printer, `Discount${discountReason ? ' (' + discountReason + ')' : ''}`, -discount);
-    if (rounding !== 0) amountRow(printer, 'Rounding', rounding);
-    printer.drawLine();
-    amountRow(printer, 'TOTAL', total, true);
-    printer.drawLine();
-
-    printer.leftRight('Payment', String(method).toUpperCase());
-    if (received != null) amountRow(printer, 'Cash', received);
-    if (change != null) amountRow(printer, 'Change', change);
-
-    printer.newLine();
-    printer.alignCenter();
-    printer.bold(true);
-    say(printer, 'Thank You! 多謝惠顧');
-    printer.bold(false);
-    say(printer, 'Please come again');
-    printer.newLine();
-    say(printer, 'Pre-order 預訂:');
-    printer.bold(true);
-    say(printer, preorderPhones.join('   '));
-    printer.bold(false);
-    finish(printer);
-    await executeWithRetry(printer, `receipt`);
   }
 
   // ---------- VOID ---------------------------------------------------------
@@ -573,9 +385,7 @@ function create(config) {
   }
 
   return {
-    printKitchen,
     printOrderSummary,
-    printReceipt,
     printVoid,
     printRefund,
     printRestock,

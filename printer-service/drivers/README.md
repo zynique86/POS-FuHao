@@ -27,12 +27,11 @@ A driver returned by `create(config)` MUST expose these async methods:
 
 | Method | Argument shape (plain object) |
 |---|---|
-| `printKitchen(ticket)` | `{ stationName, tableNumber, orderId, timeStr, items: [{ qty, name, nameZh, options, note }] }` |
 | `printOrderSummary(summary)` | `{ shopName, shopNameZh, tableNumber, orderId, when, takenByName, items }` |
-| `printReceipt(receipt)` | header fields + `items: [{ qty, name, nameZh, priceAtTime, options, note }]` + totals + payment |
 | `printVoid(ticket)` | `{ time, orderId, qty, name, nameZh, reason }` |
 | `printRefund(ticket)` | `{ when, orderId, amount, method, reason, by }` |
 | `printRestock(ticket)` | `{ time, stationName, name, nameZh, qty, note, by }` |
+| `printLayout(entries, label)` | plays an entry array (see `layouts/receipt.js`) against the printer — used for kitchen/bar tickets and receipts |
 | `openDrawer()` | — |
 | `status()` | returns `{ ok, station, ip?, reason? }` |
 

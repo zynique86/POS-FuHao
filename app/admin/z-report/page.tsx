@@ -46,7 +46,10 @@ export default function ZReportPage() {
           .lte('created_at', dayEnd.toISOString()),
         fetchShiftForDate(date),
       ]);
-      setOrders((ordersRes.data ?? []) as OrderRow[]);
+      const liveOrders = ((ordersRes.data ?? []) as OrderRow[]).filter(
+        (o) => o.status !== 'void' && o.status !== 'refunded'
+      );
+      setOrders(liveOrders);
       setItems((itemsRes.data ?? []) as ItemRow[]);
       setShift(shiftRes);
       setLoading(false);
