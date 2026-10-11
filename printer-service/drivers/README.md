@@ -30,8 +30,7 @@ A driver returned by `create(config)` MUST expose these async methods:
 | `printOrderSummary(summary)` | `{ shopName, shopNameZh, tableNumber, orderId, when, takenByName, items }` |
 | `printVoid(ticket)` | `{ time, orderId, qty, name, nameZh, reason }` |
 | `printRefund(ticket)` | `{ when, orderId, amount, method, reason, by }` |
-| `printRestock(ticket)` | `{ time, stationName, name, nameZh, qty, note, by }` |
-| `printLayout(entries, label)` | plays an entry array (see `layouts/receipt.js`) against the printer — used for kitchen/bar tickets and receipts |
+| `printLayout(entries, label)` | plays an entry array (see `layouts/receipt.js`) against the printer — used for kitchen/bar/restock tickets and receipts |
 | `openDrawer()` | — |
 | `status()` | returns `{ ok, station, ip?, reason? }` |
 

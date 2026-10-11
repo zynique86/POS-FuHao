@@ -6,7 +6,7 @@
 // transport later, write a sibling file exposing the same methods.
 //
 // Shape returned by create():
-//   { printOrderSummary, printVoid, printRefund, printRestock,
+//   { printOrderSummary, printVoid, printRefund,
 //     printLayout, openDrawer, status }
 //
 // Config:
@@ -281,51 +281,6 @@ function create(config) {
     await executeWithRetry(printer, `refund slip`);
   }
 
-  // ---------- RESTOCK ------------------------------------------------------
-  async function printRestock(ticket) {
-    const { time, stationName, name, nameZh, qty, note, by } = ticket;
-    const lines = [
-      '###################################',
-      '         *** RESTOCK ***',
-      `         ${stationName}`,
-      '###################################',
-      time,
-      '',
-      `Item: ${name}`,
-      ...(hasRealName(nameZh) ? [`     ${nameZh}`] : []),
-      ...(qty ? [`Qty:  ${qty}`] : []),
-      ...(note ? [`Note: ${note}`] : []),
-      ...(by ? [`By:   ${by}`] : []),
-      '###################################',
-    ];
-
-    const printer = makePrinter();
-    if (!printer) return consoleFallback('restock', lines);
-
-    printer.alignCenter();
-    printer.bold(true);
-    printer.setTextSize(1, 2);
-    printer.println('*** RESTOCK ***');
-    printer.setTextNormal();
-    printer.bold(false);
-    say(printer, stationName);
-    printer.println(time);
-    printer.drawLine();
-    printer.alignLeft();
-    printer.bold(true);
-    printer.setTextSize(1, 1);
-    say(printer, name);
-    printer.setTextNormal();
-    if (hasRealName(nameZh)) say(printer, nameZh);
-    printer.bold(false);
-    if (qty) printer.println(`Qty:  ${qty}`);
-    if (note) say(printer, `Note: ${note}`);
-    if (by) printer.println(`By:   ${by}`);
-    printer.drawLine();
-    finish(printer);
-    await executeWithRetry(printer, `restock slip`);
-  }
-
   // ---------- GENERIC LAYOUT RENDERER --------------------------------------
   // Takes an array of entries (see printer-service/layouts/receipt.js for the
   // contract) and plays them against node-thermal-printer.  All ticket-shape
@@ -388,7 +343,6 @@ function create(config) {
     printOrderSummary,
     printVoid,
     printRefund,
-    printRestock,
     printLayout,
     openDrawer,
     status,

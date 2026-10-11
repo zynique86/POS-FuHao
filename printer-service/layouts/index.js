@@ -9,5 +9,6 @@ const format  = require('./format');
 const receipt = require('./receipt');
 const kitchen = require('./kitchen');
 const bar     = require('./bar');
+const restock = require('./restock');
 
-module.exports = { format, receipt, kitchen, bar };
+module.exports = { format, receipt, kitchen, bar, restock };

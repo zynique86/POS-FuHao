@@ -13,7 +13,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { receipt, kitchen, bar, format } = require('../layouts');
+const { receipt, kitchen, bar, restock, format } = require('../layouts');
 const { WIDTH, entryText } = format;
 
 // A fixed "now" so the time/date are stable across machines.  Chosen so that
@@ -315,6 +315,80 @@ test('bar layout — canonical snapshot matches the mockup', () => {
   ].join('\n');
 
   assert.equal(render(entries), expected);
+});
+
+// ---------------------------------------------------------------------------
+// RESTOCK
+// ---------------------------------------------------------------------------
+// Deliberately laid out the same way as the kitchen ticket (header strip,
+// bold item block, footer rule) — see layouts/restock.js.
+
+test('restock layout — every produced line fits WIDTH', () => {
+  const entries = restock.build({
+    stationLabel: 'GRILL',
+    request: {
+      id: 7,
+      name: 'Har Gow',
+      nameZh: '蝦餃',
+      qty: 20,
+      note: 'Running low for lunch rush',
+      by: 'Alex',
+    },
+    tz: TZ,
+    now: FIXED_NOW,
+  });
+  assertAllFitWidth(entries);
+});
+
+test('restock layout — canonical snapshot mirrors the kitchen ticket shape', () => {
+  const entries = restock.build({
+    stationLabel: 'GRILL',
+    request: {
+      id: 7,
+      name: 'Har Gow',
+      nameZh: '蝦餃',
+      qty: 20,
+      note: 'Running low for lunch rush',
+      by: 'Alex',
+    },
+    tz: TZ,
+    now: FIXED_NOW,
+  });
+
+  const expected = [
+    '==========================================',
+    '[RESTOCK REQUEST]          TICKET #: #0007',
+    '------------------------------------------',
+    'TIME: 14:32                       BY: Alex',
+    '==========================================',
+    '',
+    '[20] HAR GOW',
+    '    蝦餃',
+    '    NOTE: RUNNING LOW FOR LUNCH RUSH',
+    '',
+    '==========================================',
+    'RESTOCK                     Station: GRILL',
+    '==========================================',
+    '',
+    '',
+    '',
+    '[CUT]',
+  ].join('\n');
+
+  assert.equal(render(entries), expected);
+});
+
+test('restock layout — omits BY / note / Chinese name when absent', () => {
+  const entries = restock.build({
+    stationLabel: 'BAR',
+    request: { id: 8, name: 'Lemon Tea', qty: 5 },
+    tz: TZ,
+    now: FIXED_NOW,
+  });
+  const rendered = render(entries);
+  assert.ok(rendered.includes('BY: -'));
+  assert.ok(!rendered.includes('NOTE:'));
+  assertAllFitWidth(entries);
 });
 
 // ---------------------------------------------------------------------------
