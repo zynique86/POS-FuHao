@@ -697,37 +697,18 @@ function RefundModal({
     try {
       const { data: userRes } = await supabase.auth.getUser();
       const by = userRes?.user?.email ?? 'staff';
-      const amount = Number(order.total);
 
-      // Insert a negative payment as the refund record
-      const { error: payErr } = await supabase.from('payments').insert({
-        order_id: order.id,
-        method: order.payment_method ?? 'cash',
-        amount: -amount,
-        received: -amount,
-        change_given: 0,
-        status: 'refunded',
+      // One atomic RPC: the order flips to 'refunded' only if it isn't
+      // already (an UPDATE ... WHERE status <> 'refunded'), so a double
+      // click or two tabs refunding the same order can't double-insert the
+      // negative payment — the loser's update matches zero rows and the
+      // function raises instead.
+      const { error } = await supabase.rpc('refund_order', {
+        p_order_id: order.id,
+        p_reason: reason.trim(),
+        p_by: by,
       });
-      if (payErr) throw payErr;
-
-      // Mark order refunded
-      await supabase
-        .from('orders')
-        .update({
-          status: 'refunded',
-          refunded_at: new Date().toISOString(),
-          refund_reason: reason.trim(),
-          refunded_by: by,
-        })
-        .eq('id', order.id);
-
-      // Enqueue a refund slip print — goes to the counter printer.
-      await supabase.from('print_jobs').insert({
-        order_id: order.id,
-        kind: 'refund',
-        station: 'cashier',
-        payload: { reason: reason.trim(), by, amount },
-      });
+      if (error) throw error;
 
       onDone();
     } catch (e: unknown) {
@@ -1210,43 +1191,23 @@ function PayModal({
     const receivedNum = method === 'cash' ? Number(received) : amount;
     const change = method === 'cash' ? Math.max(0, receivedNum - amount) : 0;
 
-    const { error: payErr } = await supabase.from('payments').insert({
-      order_id: order.id,
-      method,
-      amount,
-      received: receivedNum,
-      change_given: change,
-      status: 'succeeded',
+    // One atomic RPC: insert the payment, sum it against the order total,
+    // and — if that covers the bill — mark the order paid and queue the
+    // receipt, all under a row lock on the order. Two devices racing to pay
+    // the same order can no longer both insert a full payment before either
+    // side marks it paid; the second call sees paid_at already set and
+    // raises instead of double-charging.
+    const { error } = await supabase.rpc('record_payment', {
+      p_order_id: order.id,
+      p_method: method,
+      p_amount: amount,
+      p_received: receivedNum,
+      p_change_given: change,
     });
-    if (payErr) {
-      alert('Payment failed: ' + payErr.message);
+    if (error) {
+      alert('Payment failed: ' + error.message);
       setBusy(false);
       return;
-    }
-
-    const { data: allPays } = await supabase.from('payments').select('amount').eq('order_id', order.id);
-    const paidNow = (allPays ?? []).reduce((s, p) => s + Number(p.amount), 0);
-
-    if (paidNow + 0.001 >= Number(order.total)) {
-      const { error: updErr } = await supabase
-        .from('orders')
-        .update({
-          paid_at: new Date().toISOString(),
-          payment_method: method,
-          status: 'paid',
-        })
-        .eq('id', order.id);
-      if (updErr) {
-        alert('Failed to close order: ' + updErr.message);
-        setBusy(false);
-        return;
-      }
-      await supabase.from('print_jobs').insert({
-        order_id: order.id,
-        kind: 'receipt',
-        station: 'cashier',
-        payload: { reprint: false },
-      });
     }
 
     setBusy(false);
@@ -1649,20 +1610,17 @@ function DiscountModal({
     setBusy(true);
     setErr(null);
     try {
-      const d = clear ? 0 : discount;
-      const finalGross = Math.max(0, subtotal + svc + tax - d);
-      const finalTotal = settings.round_to_5_sen ? roundToNearest5Sen(finalGross) : round2(finalGross);
-      const finalRounding = round2(finalTotal - finalGross);
-
-      const { error } = await supabase
-        .from('orders')
-        .update({
-          discount: Math.round(d * 100) / 100,
-          discount_reason: clear ? null : (reason.trim() || null),
-          rounding: finalRounding,
-          total: finalTotal,
-        })
-        .eq('id', order.id);
+      // Recomputes against the order's CURRENT subtotal/service_charge/tax
+      // inside the RPC, not the snapshot this modal opened with — if a
+      // waiter adds an item while this modal is open, the discount is still
+      // applied against the up-to-date bill instead of silently dropping
+      // the new item's value.
+      const { error } = await supabase.rpc('apply_discount', {
+        p_order_id: order.id,
+        p_mode: clear ? 'amount' : mode,
+        p_value: clear ? 0 : Number(value) || 0,
+        p_reason: clear ? null : (reason.trim() || null),
+      });
       if (error) throw error;
 
       onDone();
