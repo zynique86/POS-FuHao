@@ -1,1 +1,0 @@
-# FuHao-POS

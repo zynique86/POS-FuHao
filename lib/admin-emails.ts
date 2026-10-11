@@ -7,6 +7,7 @@
 // ★  EDIT THIS LIST WHEN YOU HIRE OR PROMOTE PEOPLE  ★
 
 export const ADMIN_EMAILS = [
+  'zynique86@gmail.com',
   'ezjiet@gmail.com',
   'poyee4963@gmail.com',
   'rickytan5791@gmail.com',
