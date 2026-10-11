@@ -32,11 +32,11 @@ security invoker
 set search_path = public
 as $$
   select lower(coalesce(auth.jwt() ->> 'email', '')) in (
+    'zynique86@gmail.com',
     'ezjiet@gmail.com',
     'poyee4963@gmail.com',
     'rickytan5791@gmail.com',
     'tan523567@gmail.com'
-    -- add new admin emails here, one per line, comma-separated
   );
 $$;
 ```
