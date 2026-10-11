@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -17,6 +17,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   const [checked, setChecked] = useState(false);
   const [me, setMe] = useState<CurrentUser | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [shop, setShop] = useState<{ name: string; nameZh: string }>({
     name: 'Dim Sum POS',
     nameZh: '點心 · Point of Sale',
@@ -87,6 +89,21 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     };
   }, [isLoginRoute, router, pathname]);
 
+  // Close the profile menu on an outside click, or when the route changes.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [menuOpen]);
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
   if (!checked) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -141,7 +158,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             )}
           </nav>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="relative flex items-center gap-2 shrink-0" ref={menuRef}>
             {me?.name && (
               <span className="hidden md:flex flex-col leading-tight text-right">
                 <span className="text-xs font-bold text-[var(--ink-900)] truncate max-w-[140px]">
@@ -152,7 +169,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                 </span>
               </span>
             )}
-            <span
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-haspopup="true"
+              aria-expanded={menuOpen}
               className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
               style={{
                 background: isAdmin
@@ -162,17 +182,33 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
               title={me?.email ?? ''}
             >
               {initial}
-            </span>
-            <button
-              onClick={async () => {
-                await supabase.auth.signOut();
-                clearRoleCache();
-                router.replace('/login');
-              }}
-              className="text-xs text-[var(--ink-500)] hover:text-[var(--brand-600)] font-medium hidden md:block"
-            >
-              Sign out
             </button>
+
+            {menuOpen && (
+              <div
+                className="absolute right-0 top-[calc(100%+8px)] w-48 rounded-xl border border-[var(--ink-200)] bg-[var(--cream-50)] py-1.5 shadow-lg z-50"
+              >
+                <div className="px-3 py-2 border-b border-[var(--ink-200)]">
+                  <p className="text-xs font-bold text-[var(--ink-900)] truncate">
+                    {me?.name}
+                  </p>
+                  <p className="text-[10px] text-[var(--ink-500)] truncate">
+                    {me?.email}
+                  </p>
+                </div>
+                <button
+                  onClick={async () => {
+                    setMenuOpen(false);
+                    await supabase.auth.signOut();
+                    clearRoleCache();
+                    router.replace('/login');
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm font-medium text-[var(--ink-700)] hover:bg-[var(--cream-200)]"
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
