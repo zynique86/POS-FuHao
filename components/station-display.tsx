@@ -146,22 +146,29 @@ export default function StationDisplay({
 
   // Colour theme differs per station so a glance at the tablet tells you
   // which surface you're on.
-  const theme = useMemo(
-    () =>
-      station === 'bar'
-        ? {
-            bg: 'radial-gradient(1200px 500px at 10% 0%, rgb(5 150 105 / 0.20), transparent 60%), radial-gradient(900px 500px at 100% 100%, rgb(217 119 6 / 0.15), transparent 60%), #0F1917',
-            accent: 'var(--gold-400)',
-            headerBg:
-              'linear-gradient(90deg, var(--jade-600), transparent)',
-          }
-        : {
-            bg: 'radial-gradient(1200px 500px at 10% 0%, rgb(180 83 9 / 0.20), transparent 60%), radial-gradient(900px 500px at 100% 100%, rgb(220 38 38 / 0.15), transparent 60%), #1C1917',
-            accent: 'var(--gold-400)',
-            headerBg: 'linear-gradient(90deg, var(--ink-800), transparent)',
-          },
-    [station]
-  );
+  const theme = useMemo(() => {
+    if (station === 'bar') {
+      return {
+        bg: 'radial-gradient(1200px 500px at 10% 0%, rgb(5 150 105 / 0.20), transparent 60%), radial-gradient(900px 500px at 100% 100%, rgb(217 119 6 / 0.15), transparent 60%), #0F1917',
+        accent: 'var(--gold-400)',
+        headerBg: 'linear-gradient(90deg, var(--jade-600), transparent)',
+      };
+    }
+    if (station === 'cashier') {
+      // Front kitchen — distinct blue-ish tint so it reads differently from
+      // Back Kitchen's red/orange at a glance.
+      return {
+        bg: 'radial-gradient(1200px 500px at 10% 0%, rgb(37 99 235 / 0.18), transparent 60%), radial-gradient(900px 500px at 100% 100%, rgb(180 83 9 / 0.12), transparent 60%), #171B24',
+        accent: 'var(--gold-400)',
+        headerBg: 'linear-gradient(90deg, #1E3A8A, transparent)',
+      };
+    }
+    return {
+      bg: 'radial-gradient(1200px 500px at 10% 0%, rgb(180 83 9 / 0.20), transparent 60%), radial-gradient(900px 500px at 100% 100%, rgb(220 38 38 / 0.15), transparent 60%), #1C1917',
+      accent: 'var(--gold-400)',
+      headerBg: 'linear-gradient(90deg, var(--ink-800), transparent)',
+    };
+  }, [station]);
 
   return (
     <div
