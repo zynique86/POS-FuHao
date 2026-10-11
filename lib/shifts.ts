@@ -1,6 +1,7 @@
 // Helpers for the shift_opens table.
 
 import { supabase } from './supabase';
+import { businessTodayISO } from './datetime';
 
 export type Shift = {
   id: number;
@@ -17,11 +18,7 @@ export type Shift = {
 };
 
 export function todayISODate(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${dd}`;
+  return businessTodayISO();
 }
 
 // Fetch the open (not-yet-closed) shift for the given business date.

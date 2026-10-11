@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { AdminPageHeader } from '@/components/ui';
 import { fetchShiftForDate, type Shift } from '@/lib/shifts';
-import { businessDateStartISO, nextDateISO } from '@/lib/datetime';
+import { businessDateStartISO, businessTodayISO, nextDateISO } from '@/lib/datetime';
 
 type OrderRow = {
   id: number;
@@ -308,11 +308,7 @@ function ReconRow({ label, value }: { label: string; value: number }) {
 }
 
 function todayISO() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${dd}`;
+  return businessTodayISO();
 }
 
 function Tile({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
