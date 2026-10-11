@@ -42,6 +42,7 @@ import {
   PAY_METHOD_LABELS,
 } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
+import { businessTodayISO } from '@/lib/datetime';
 
 // Which tab is currently active.  Every tab has its own quick-entry form
 // but they all write to the same `expenses` table.
@@ -54,11 +55,7 @@ const TABS: Tab[] = ['wages', 'meal', 'purchase', 'other', 'rent', 'utility'];
 // -------------------------------------------------------------------------
 
 function todayISO(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return businessTodayISO();
 }
 
 function fmt(n: number): string {

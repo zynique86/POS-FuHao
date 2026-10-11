@@ -11,6 +11,13 @@ import {
   applyRowEventBuckets,
   type RealtimePayload,
 } from '@/lib/realtime-reducers';
+import { businessDayStart } from '@/lib/datetime';
+
+// A paid order that was later voided/refunded should drop out of revenue —
+// same rule z-report and rankings already use.
+function isLiveRevenue(o: { status: string }): boolean {
+  return o.status !== 'void' && o.status !== 'refunded';
+}
 
 type OrderRow = {
   id: number;
@@ -49,11 +56,14 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [pulse, setPulse] = useState(0);
 
+  // Anchored to the shop's own business day (Asia/Kuala_Lumpur), not the
+  // viewer's browser timezone — otherwise a device in another TZ shows the
+  // wrong day's numbers, exactly what businessDayStart() guards against
+  // elsewhere (z-report, rankings, monthly-report).
   function windows() {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStart = businessDayStart();
     const yestStart = new Date(todayStart);
-    yestStart.setDate(yestStart.getDate() - 1);
+    yestStart.setUTCDate(yestStart.getUTCDate() - 1);
     return { todayStart, yestStart };
   }
 
@@ -61,8 +71,8 @@ export default function Dashboard() {
     const { todayStart, yestStart } = windows();
 
     const [todayRes, yestRes, itemsRes, paysRes, openRes] = await Promise.all([
-      supabase.from('orders').select('*').gte('paid_at', todayStart.toISOString()),
-      supabase.from('orders').select('*').gte('paid_at', yestStart.toISOString()).lt('paid_at', todayStart.toISOString()),
+      supabase.from('orders').select('*').gte('paid_at', todayStart.toISOString()).not('status', 'in', '("void","refunded")'),
+      supabase.from('orders').select('*').gte('paid_at', yestStart.toISOString()).lt('paid_at', todayStart.toISOString()).not('status', 'in', '("void","refunded")'),
       supabase.from('order_items').select('id, order_id, name_snapshot, qty, price_at_time, voided_at').gte('created_at', todayStart.toISOString()),
       supabase.from('payments').select('id, method, amount, created_at').gte('created_at', todayStart.toISOString()),
       supabase.from('orders').select('*').is('paid_at', null).neq('status', 'void'),
@@ -83,9 +93,9 @@ export default function Dashboard() {
     const y = yestStart.getTime();
 
     const isToday = (o: OrderRow) =>
-      o.paid_at != null && new Date(o.paid_at).getTime() >= t;
+      o.paid_at != null && new Date(o.paid_at).getTime() >= t && isLiveRevenue(o);
     const isYest = (o: OrderRow) => {
-      if (o.paid_at == null) return false;
+      if (o.paid_at == null || !isLiveRevenue(o)) return false;
       const p = new Date(o.paid_at).getTime();
       return p >= y && p < t;
     };

@@ -1144,12 +1144,21 @@ function OrderMenuModal({
             <SecondaryBtn onClick={onChangeTable}>🔀 Change table</SecondaryBtn>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={onRemoveOrder}
-              className="w-full font-bold py-3 rounded-2xl transition text-[var(--brand-700)] bg-[var(--brand-50)] hover:bg-[var(--brand-100)] border border-[var(--brand-200)]"
-            >
-              🗑 Remove order
-            </button>
+            {paidSoFar > 0 ? (
+              <span
+                className="w-full flex items-center justify-center text-center text-xs font-semibold text-[var(--ink-400)] bg-[var(--ink-100)] rounded-2xl px-2"
+                title="This order already has a partial payment recorded — removing it would make that cash vanish from today's reconciliation. Collect/refund the paid amount first."
+              >
+                Can&apos;t remove · RM {paidSoFar.toFixed(2)} already paid
+              </span>
+            ) : (
+              <button
+                onClick={onRemoveOrder}
+                className="w-full font-bold py-3 rounded-2xl transition text-[var(--brand-700)] bg-[var(--brand-50)] hover:bg-[var(--brand-100)] border border-[var(--brand-200)]"
+              >
+                🗑 Remove order
+              </button>
+            )}
             <SecondaryBtn onClick={onClose}>Close</SecondaryBtn>
           </div>
         </div>

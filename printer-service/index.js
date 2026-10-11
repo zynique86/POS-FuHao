@@ -485,8 +485,22 @@ async function main() {
       () => refreshSettings()
     )
     .subscribe((status) => {
-      if (status === 'SUBSCRIBED') console.log('✅ Subscribed. Waiting for print jobs…\n');
+      if (status === 'SUBSCRIBED') {
+        console.log('✅ Subscribed. Waiting for print jobs…\n');
+        // Realtime does not replay events that fired while the socket was
+        // down, so every (re)connect — including after a network blip —
+        // needs its own catch-up pass or a job inserted during the gap is
+        // silently never printed.
+        catchUp().catch((e) => console.error('catchUp failed:', e.message));
+      }
     });
+
+  // Safety-net poll on top of Realtime, for the same reason: a missed
+  // reconnect event or a gap Realtime itself doesn't notice should still
+  // get picked up within a minute instead of sitting unprinted all shift.
+  setInterval(() => {
+    catchUp().catch((e) => console.error('catchUp failed:', e.message));
+  }, 60_000);
 }
 
 if (require.main === module) {
