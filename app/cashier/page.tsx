@@ -21,6 +21,7 @@ import {
 import { removeOrder, changeTable, logItemRemoval } from '@/lib/order-actions';
 import { businessDayStartISO } from '@/lib/datetime';
 import { useSettings } from '@/lib/use-settings';
+import { roundToNearest5Sen } from '@/lib/pricing';
 import { buildDuitNowPayload } from '@/lib/duitnow';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -1608,6 +1609,7 @@ function DiscountModal({
   onCancel: () => void;
   onDone: () => void;
 }) {
+  const settings = useSettings();
   const [mode, setMode] = useState<'pct' | 'amount'>('amount');
   const [value, setValue] = useState<string>(
     Number(order.discount) > 0 ? String(order.discount) : ''
@@ -1628,9 +1630,10 @@ function DiscountModal({
     return Math.min(grossBeforeDiscount, n);
   }, [value, mode, grossBeforeDiscount]);
 
+  const round2 = (n: number) => Math.round(n * 100) / 100;
   const newGross = Math.max(0, grossBeforeDiscount - discount);
-  const rounded = Math.round(newGross * 20) / 20; // 5-sen rounding, always on for MYR shops
-  const rounding = Math.round((rounded - newGross) * 100) / 100;
+  const rounded = settings.round_to_5_sen ? roundToNearest5Sen(newGross) : round2(newGross);
+  const rounding = round2(rounded - newGross);
   const newTotal = rounded;
 
   async function apply(clear: boolean = false) {
@@ -1638,9 +1641,9 @@ function DiscountModal({
     setErr(null);
     try {
       const d = clear ? 0 : discount;
-      const finalGross = subtotal + svc + tax - d;
-      const finalTotal = Math.round(finalGross * 20) / 20;
-      const finalRounding = Math.round((finalTotal - finalGross) * 100) / 100;
+      const finalGross = Math.max(0, subtotal + svc + tax - d);
+      const finalTotal = settings.round_to_5_sen ? roundToNearest5Sen(finalGross) : round2(finalGross);
+      const finalRounding = round2(finalTotal - finalGross);
 
       const { error } = await supabase
         .from('orders')

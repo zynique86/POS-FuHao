@@ -7,7 +7,7 @@
 // Entry shapes: see receipt.js.
 
 const {
-  WIDTH, DEFAULT_TZ, line, centre, twoCol, wrap,
+  WIDTH, DEFAULT_TZ, twoCol, wrap,
   fmtTime, ticketNumber,
 } = require('./format');
 

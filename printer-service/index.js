@@ -421,15 +421,25 @@ async function handleRestock(job, station) {
   const p = job.payload || {};
   const name = p.item_name || 'unknown item';
 
-  await driverFor(station).printRestock({
-    time: new Date().toLocaleTimeString('en-MY'),
-    stationName: station === 'bar' ? 'BAR / 水吧' : 'BACK KITCHEN / 後廚',
-    name,
-    nameZh: p.item_name_zh,
-    qty: p.qty_wanted,
-    note: p.note,
-    by: p.by,
+  // Laid out the same way as the kitchen/bar order voucher (see
+  // layouts/restock.js) so a restock slip reads like a familiar ticket
+  // instead of a one-off format.
+  const entries = layouts.restock.build({
+    headerLabel: '[RESTOCK REQUEST]',
+    stationLabel: STATION_LABELS[station] || station.toUpperCase(),
+    request: {
+      id: p.restock_id,
+      name,
+      nameZh: p.item_name_zh,
+      qty: p.qty_wanted,
+      note: p.note,
+      by: p.by,
+    },
+    tz: BUSINESS_TZ,
+    now: new Date(),
   });
+
+  await driverFor(station).printLayout(entries, 'restock slip');
   console.log(`🔥 Restock slip printed for ${name} at ${station}`);
 }
 

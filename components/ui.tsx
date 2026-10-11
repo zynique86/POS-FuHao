@@ -7,40 +7,6 @@ import { useEffect } from 'react';
 
 // ─── page header ──────────────────────────────────────────────────────────
 
-// Main-surface header (POS, Kitchen, Bar, Cashier, Restock).
-//   label   → uppercase-tracked role label, bilingual, e.g. "Waiter · 服務員"
-//   title   → big page title, e.g. "Take Order"
-//   sub     → optional subtitle
-//   right   → optional right-side content (stat chips, controls)
-export function PageHeader({
-  label,
-  title,
-  sub,
-  right,
-}: {
-  label?: string;
-  title: string;
-  sub?: string;
-  right?: React.ReactNode;
-}) {
-  return (
-    <header className="flex flex-wrap items-end justify-between gap-4 mb-6">
-      <div>
-        {label && (
-          <p className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]">
-            {label}
-          </p>
-        )}
-        <h1 className="text-3xl md:text-4xl font-bold text-[var(--ink-900)] mt-1">
-          {title}
-        </h1>
-        {sub && <p className="text-sm text-[var(--ink-500)] mt-1">{sub}</p>}
-      </div>
-      {right}
-    </header>
-  );
-}
-
 // Admin subpage header — same look but with a "← Dashboard" back link
 // in place of the role label. Title is bilingual by convention.
 export function AdminPageHeader({
@@ -159,34 +125,6 @@ export function SecondaryBtn({
       className={`w-full bg-[var(--cream-100)] hover:bg-[var(--cream-200)] text-[var(--ink-800)] font-bold py-3 rounded-2xl transition disabled:opacity-60 ${className}`}
     >
       {children}
-    </button>
-  );
-}
-
-export function ConfirmBtn({
-  children,
-  onClick,
-  disabled,
-  busy,
-  className = '',
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  disabled?: boolean;
-  busy?: boolean;
-  className?: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`w-full text-white font-bold py-3.5 rounded-2xl text-base transition disabled:opacity-60 ${className}`}
-      style={{
-        background: 'linear-gradient(135deg, var(--jade-500), var(--jade-600))',
-        boxShadow: '0 10px 24px -8px rgb(5 150 105 / 0.35)',
-      }}
-    >
-      {busy ? 'Recording…' : children}
     </button>
   );
 }

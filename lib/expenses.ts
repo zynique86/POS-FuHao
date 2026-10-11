@@ -42,37 +42,9 @@ export async function listExpensesForDate(businessDate: string): Promise<Expense
   return (data ?? []) as Expense[];
 }
 
-export async function listExpensesInRange(
-  startDate: string,
-  endDate: string,
-  kind?: ExpenseKind
-): Promise<Expense[]> {
-  let q = supabase
-    .from('expenses')
-    .select('*')
-    .gte('business_date', startDate)
-    .lte('business_date', endDate)
-    .order('business_date', { ascending: true });
-  if (kind) q = q.eq('kind', kind);
-  const { data, error } = await q;
-  if (error) throw toError(error, 'Failed to load expenses');
-  return (data ?? []) as Expense[];
-}
-
 export async function insertExpense(row: Omit<Expense, 'id' | 'created_at'>) {
   const { data, error } = await supabase.from('expenses').insert(row).select('*').single();
   if (error) throw toError(error, 'Failed to save expense');
-  return data as Expense;
-}
-
-export async function updateExpense(id: number, patch: Partial<Expense>) {
-  const { data, error } = await supabase
-    .from('expenses')
-    .update(patch)
-    .eq('id', id)
-    .select('*')
-    .single();
-  if (error) throw toError(error, 'Failed to update expense');
   return data as Expense;
 }
 

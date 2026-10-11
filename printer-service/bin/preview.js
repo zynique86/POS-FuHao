@@ -1,18 +1,19 @@
 #!/usr/bin/env node
-// Preview the three 80mm ticket layouts to stdout, so you can see exactly
+// Preview the 80mm ticket layouts to stdout, so you can see exactly
 // what the printer will emit before putting paper in it.
 //
 //   node printer-service/bin/preview.js receipt
 //   node printer-service/bin/preview.js kitchen
 //   node printer-service/bin/preview.js bar
+//   node printer-service/bin/preview.js restock
 //   node printer-service/bin/preview.js all      (default)
 //
-// The fixture mirrors the three mockups one-to-one, so a diff against
+// The fixture mirrors the mockups one-to-one, so a diff against
 // docs/mockups/*.txt is the quickest sanity check after any layout tweak.
 // This script never talks to Supabase, the printer, or the network — it
 // only exercises the pure layout functions in printer-service/layouts/.
 
-const { receipt, kitchen, bar, format } = require('../layouts');
+const { receipt, kitchen, bar, restock, format } = require('../layouts');
 
 const FIXED_NOW = new Date('2026-10-07T06:32:00Z');  // 14:32 Asia/Kuala_Lumpur
 const TZ = 'Asia/Kuala_Lumpur';
@@ -99,6 +100,22 @@ function previewBar() {
   }));
 }
 
+function previewRestock() {
+  return render(restock.build({
+    stationLabel: 'GRILL',
+    request: {
+      id: 7,
+      name: 'Har Gow',
+      nameZh: '蝦餃',
+      qty: 20,
+      note: 'Running low for lunch rush',
+      by: 'Alex',
+    },
+    tz: TZ,
+    now: FIXED_NOW,
+  }));
+}
+
 function banner(title) {
   const bar = '─'.repeat(format.WIDTH);
   return `\n${bar}\n  ${title}\n${bar}\n`;
@@ -109,6 +126,7 @@ const parts = [];
 if (which === 'receipt' || which === 'all') parts.push(banner('RECEIPT') + previewReceipt());
 if (which === 'kitchen' || which === 'all') parts.push(banner('KITCHEN TICKET') + previewKitchen());
 if (which === 'bar'     || which === 'all') parts.push(banner('BAR TICKET')     + previewBar());
+if (which === 'restock' || which === 'all') parts.push(banner('RESTOCK SLIP')   + previewRestock());
 
 if (parts.length === 0) {
   console.error(`usage: node printer-service/bin/preview.js [receipt|kitchen|bar|all]`);

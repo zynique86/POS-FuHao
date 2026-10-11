@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { AdminPageHeader } from '@/components/ui';
 import { fetchShiftForDate, type Shift } from '@/lib/shifts';
+import { businessDateStartISO, nextDateISO } from '@/lib/datetime';
 
 type OrderRow = {
   id: number;
@@ -30,23 +31,29 @@ export default function ZReportPage() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const dayStart = new Date(date + 'T00:00:00');
-      const dayEnd = new Date(date + 'T23:59:59.999');
+      // Boundaries are the shop's own business-day midnight
+      // (Asia/Kuala_Lumpur is UTC+8), not the viewer's browser timezone —
+      // otherwise a device set to a different TZ shows the wrong day.
+      const dayStartISO = businessDateStartISO(date);
+      const dayEndISO = businessDateStartISO(nextDateISO(date));
       const [ordersRes, itemsRes, shiftRes] = await Promise.all([
         supabase
           .from('orders')
           .select('id, total, payment_method, paid_at, status')
           .not('paid_at', 'is', null)
-          .gte('paid_at', dayStart.toISOString())
-          .lte('paid_at', dayEnd.toISOString()),
+          .gte('paid_at', dayStartISO)
+          .lt('paid_at', dayEndISO),
         supabase
           .from('order_items')
           .select('order_id, name_snapshot, qty, price_at_time, voided_at')
-          .gte('created_at', dayStart.toISOString())
-          .lte('created_at', dayEnd.toISOString()),
+          .gte('created_at', dayStartISO)
+          .lt('created_at', dayEndISO),
         fetchShiftForDate(date),
       ]);
-      setOrders((ordersRes.data ?? []) as OrderRow[]);
+      const liveOrders = ((ordersRes.data ?? []) as OrderRow[]).filter(
+        (o) => o.status !== 'void' && o.status !== 'refunded'
+      );
+      setOrders(liveOrders);
       setItems((itemsRes.data ?? []) as ItemRow[]);
       setShift(shiftRes);
       setLoading(false);

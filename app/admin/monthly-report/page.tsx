@@ -20,6 +20,7 @@ import {
 } from '@/components/ui';
 import type { Expense, Order, OrderItem, ExpenseKind } from '@/lib/types';
 import { EXPENSE_LABELS, MENU_CATEGORIES, PAY_METHOD_LABELS } from '@/lib/types';
+import { businessDateStartISO } from '@/lib/datetime';
 
 // -------------------------------------------------------------------------
 // Helpers
@@ -63,12 +64,15 @@ export default function MonthlyReportPage() {
     try {
       const { start, end } = monthRange(month);
 
-      // Only include paid, non-void, non-refund orders in revenue.
+      // Only include paid, non-void, non-refund orders in revenue. The
+      // boundaries are the shop's own business-day midnight, not raw UTC —
+      // otherwise the first ~8 hours of the month (Asia/Kuala_Lumpur is
+      // UTC+8) would be attributed to the previous month.
       const oRes = await supabase
         .from('orders')
         .select('*')
-        .gte('paid_at', `${start}T00:00:00Z`)
-        .lt('paid_at',  `${end}T00:00:00Z`)
+        .gte('paid_at', businessDateStartISO(start))
+        .lt('paid_at',  businessDateStartISO(end))
         .not('paid_at', 'is', null);
       if (oRes.error) throw oRes.error;
 
