@@ -6,8 +6,10 @@
 // slightly off-centre paper feed or a non-standard printer eats a few columns
 // at each edge.  42 gives a 3-column safety margin on each side so every
 // mockup renders without wrapping on any 80mm hardware we've seen.
-
-const WIDTH = 42;
+//
+// Honors the same RECEIPT_WIDTH env var index.js/drivers use, so a narrower
+// printer configured there doesn't get layouts hardcoded to 42 anyway.
+const WIDTH = Number(process.env.RECEIPT_WIDTH) || 42;
 
 // A full-width horizontal rule of `char` (defaults to '-').
 function line(char = '-', w = WIDTH) {

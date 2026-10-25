@@ -40,12 +40,16 @@ export default function AdminSettingsPage() {
     setSaving(true);
     setErr(null);
     setSaved(false);
+    // Clamp to a sane 0–100% range — an accidental negative or 4-digit
+    // percentage here silently corrupts every receipt's tax/service charge
+    // until someone notices.
+    const clampPct = (v: string) => Math.min(100, Math.max(0, Number(v) || 0));
     const patch: Partial<ShopSettings> = {
       shop_name: draft.shop_name.trim() || 'DIM SUM SHOP',
       shop_name_zh: draft.shop_name_zh.trim(),
       address: draft.address.trim(),
-      sst_pct: Number(draft.sst_pct) || 0,
-      service_charge_pct: Number(draft.service_charge_pct) || 0,
+      sst_pct: clampPct(draft.sst_pct),
+      service_charge_pct: clampPct(draft.service_charge_pct),
       round_to_5_sen: draft.round_to_5_sen,
       updated_at: new Date().toISOString(),
     };

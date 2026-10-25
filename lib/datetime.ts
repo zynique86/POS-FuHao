@@ -7,6 +7,13 @@
 
 export const BUSINESS_TZ_DEFAULT = 'Asia/Kuala_Lumpur';
 
+// Today's calendar date (YYYY-MM-DD) in the shop's business timezone — for
+// defaulting a date picker (expenses, shift open) to the right business day
+// even when the device's own clock/timezone is set to somewhere else.
+export function businessTodayISO(tz: string = BUSINESS_TZ_DEFAULT, now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+}
+
 // Returns the UTC Date at the start of "today" in the given IANA timezone.
 // e.g. tz = 'Asia/Kuala_Lumpur' at 2026-10-08T15:00+08:00  →  2026-10-08T00:00+08:00 UTC.
 export function businessDayStart(tz: string = BUSINESS_TZ_DEFAULT, now: Date = new Date()): Date {
