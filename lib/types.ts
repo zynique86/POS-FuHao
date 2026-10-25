@@ -136,6 +136,14 @@ export type ShopSettings = {
   sst_pct: number;
   service_charge_pct: number;
   round_to_5_sen: boolean;
+  // Receipt header/footer details — printed by printer-service/index.js.
+  // Blank means the line is left off the receipt.
+  phone?: string | null;
+  tax_id?: string | null;
+  wifi_ssid?: string | null;
+  wifi_password?: string | null;
+  receipt_thank_you?: string | null;
+  receipt_come_again?: string | null;
   // Optional DuitNow merchant details — unset until the shop supplies them
   // in Admin > Settings. When any of these is missing the cashier screen
   // shows a decorative placeholder instead of generating an invalid QR.

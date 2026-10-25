@@ -189,6 +189,8 @@ let settings = {
   tax_id: '',
   wifi_ssid: '',
   wifi_password: '',
+  receipt_thank_you: '',
+  receipt_come_again: '',
   sst_pct: 0,
   service_charge_pct: 0,
   round_to_5_sen: true,
@@ -207,6 +209,8 @@ async function refreshSettings() {
       tax_id: data.tax_id || '',
       wifi_ssid: data.wifi_ssid || '',
       wifi_password: data.wifi_password || '',
+      receipt_thank_you: data.receipt_thank_you || '',
+      receipt_come_again: data.receipt_come_again || '',
       sst_pct: Number(data.sst_pct) || 0,
       service_charge_pct: Number(data.service_charge_pct) || 0,
       round_to_5_sen: !!data.round_to_5_sen,
@@ -226,7 +230,28 @@ function itemView(i) {
 }
 
 // --- dispatcher ------------------------------------------------------------
+// A job that fails because the printer is unreachable stays pending (printed_at
+// stays null) and is retried by the periodic catch-up below, so a ticket is not
+// silently lost when a printer is off or the network blips. After MAX_ATTEMPTS
+// it is given up on and marked attempted, so one dead printer or a bad job
+// never blocks the queue forever. Attempt counts are in memory only: a service
+// restart gives every pending job a fresh set of attempts.
+const MAX_ATTEMPTS = 5;
+const attempts = new Map();   // job id -> failed attempts so far
+const inFlight = new Set();   // job ids being processed right now
+
+async function markAttempted(job) {
+  try {
+    await supabase
+      .from('print_jobs')
+      .update({ printed_at: new Date().toISOString() })
+      .eq('id', job.id);
+  } catch { /* ignore secondary error */ }
+}
+
 async function processJob(job) {
+  if (inFlight.has(job.id)) return;
+  inFlight.add(job.id);
   try {
     const station = job.station || 'kitchen';
     if (job.kind === 'kitchen') await handleKitchen(job, station);
@@ -237,20 +262,22 @@ async function processJob(job) {
     else if (job.kind === 'restock') await handleRestock(job, station);
     else console.warn('Unknown job kind:', job.kind);
 
+    attempts.delete(job.id);
     await supabase
       .from('print_jobs')
       .update({ printed_at: new Date().toISOString() })
       .eq('id', job.id);
   } catch (err) {
-    console.error(`❌ Job ${job.id} (${job.kind}/${job.station}) failed:`, err.message);
-    // Mark the job as "attempted" so one bad job (wrong IP, offline printer)
-    // never blocks every other job behind it in the queue forever.
-    try {
-      await supabase
-        .from('print_jobs')
-        .update({ printed_at: new Date().toISOString() })
-        .eq('id', job.id);
-    } catch { /* ignore secondary error */ }
+    const n = (attempts.get(job.id) || 0) + 1;
+    console.error(`❌ Job ${job.id} (${job.kind}/${job.station}) failed (attempt ${n}/${MAX_ATTEMPTS}):`, err.message);
+    if (isPrinterNetError(err) && n < MAX_ATTEMPTS) {
+      attempts.set(job.id, n);   // printer unreachable — leave pending, retry later
+    } else {
+      attempts.delete(job.id);
+      await markAttempted(job);
+    }
+  } finally {
+    inFlight.delete(job.id);
   }
 }
 
@@ -370,6 +397,8 @@ async function handleReceipt(job, station) {
     footer: {
       wifiSsid: settings.wifi_ssid,
       wifiPassword: settings.wifi_password,
+      thankYou: settings.receipt_thank_you || undefined,
+      comeAgain: settings.receipt_come_again || undefined,
     },
     tz: BUSINESS_TZ,
     now: new Date(),
@@ -455,6 +484,18 @@ async function catchUp() {
   for (const job of pending) await processJob(job);
 }
 
+// Guarded catch-up, used at boot, on every Realtime (re)connect and by the
+// safety-net poll below. The poll also retries jobs left pending by an
+// unreachable printer.
+let catchingUp = false;
+async function safeCatchUp() {
+  if (catchingUp) return;
+  catchingUp = true;
+  try { await catchUp(); }
+  catch (e) { console.error('catch-up failed:', e.message); }
+  finally { catchingUp = false; }
+}
+
 // --- boot ------------------------------------------------------------------
 async function main() {
   await refreshSettings();
@@ -466,7 +507,7 @@ async function main() {
   console.log(`   Bar printer:     ${STATION_IPS.bar     || '(not set — will log)'}`);
   console.log(`   Cashier printer: ${STATION_IPS.cashier || '(not set — will log)'}`);
 
-  await catchUp();
+  await safeCatchUp();
 
   supabase
     .channel('printer-jobs')
@@ -491,16 +532,14 @@ async function main() {
         // down, so every (re)connect — including after a network blip —
         // needs its own catch-up pass or a job inserted during the gap is
         // silently never printed.
-        catchUp().catch((e) => console.error('catchUp failed:', e.message));
+        safeCatchUp();
       }
     });
 
   // Safety-net poll on top of Realtime, for the same reason: a missed
   // reconnect event or a gap Realtime itself doesn't notice should still
   // get picked up within a minute instead of sitting unprinted all shift.
-  setInterval(() => {
-    catchUp().catch((e) => console.error('catchUp failed:', e.message));
-  }, 60_000);
+  setInterval(safeCatchUp, 60_000);
 }
 
 if (require.main === module) {

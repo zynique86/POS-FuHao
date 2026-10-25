@@ -11,6 +11,12 @@ type Draft = {
   shop_name: string;
   shop_name_zh: string;
   address: string;
+  phone: string;
+  tax_id: string;
+  wifi_ssid: string;
+  wifi_password: string;
+  receipt_thank_you: string;
+  receipt_come_again: string;
   sst_pct: string;
   service_charge_pct: string;
   round_to_5_sen: boolean;
@@ -28,6 +34,12 @@ export default function AdminSettingsPage() {
         shop_name: s.shop_name,
         shop_name_zh: s.shop_name_zh,
         address: s.address,
+        phone: s.phone ?? '',
+        tax_id: s.tax_id ?? '',
+        wifi_ssid: s.wifi_ssid ?? '',
+        wifi_password: s.wifi_password ?? '',
+        receipt_thank_you: s.receipt_thank_you ?? '',
+        receipt_come_again: s.receipt_come_again ?? '',
         sst_pct: String(s.sst_pct),
         service_charge_pct: String(s.service_charge_pct),
         round_to_5_sen: s.round_to_5_sen,
@@ -48,6 +60,12 @@ export default function AdminSettingsPage() {
       shop_name: draft.shop_name.trim() || 'DIM SUM SHOP',
       shop_name_zh: draft.shop_name_zh.trim(),
       address: draft.address.trim(),
+      phone: draft.phone.trim(),
+      tax_id: draft.tax_id.trim(),
+      wifi_ssid: draft.wifi_ssid.trim(),
+      wifi_password: draft.wifi_password.trim(),
+      receipt_thank_you: draft.receipt_thank_you.trim(),
+      receipt_come_again: draft.receipt_come_again.trim(),
       sst_pct: clampPct(draft.sst_pct),
       service_charge_pct: clampPct(draft.service_charge_pct),
       round_to_5_sen: draft.round_to_5_sen,
@@ -105,6 +123,57 @@ export default function AdminSettingsPage() {
               rows={3}
               className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
             />
+          </Field>
+
+          <Field label="Phone (printed on receipts)">
+            <input
+              value={draft.phone}
+              onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
+              className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+            />
+          </Field>
+
+          <Field label="SST registration / Tax ID (printed on receipts)">
+            <input
+              value={draft.tax_id}
+              onChange={(e) => setDraft({ ...draft, tax_id: e.target.value })}
+              className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+            />
+            <span className="text-xs text-[var(--ink-400)]">Leave blank to leave it off the receipt.</span>
+          </Field>
+
+          <Field label="Wifi name (printed on receipts)">
+            <input
+              value={draft.wifi_ssid}
+              onChange={(e) => setDraft({ ...draft, wifi_ssid: e.target.value })}
+              className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+            />
+          </Field>
+
+          <Field label="Wifi password">
+            <input
+              value={draft.wifi_password}
+              onChange={(e) => setDraft({ ...draft, wifi_password: e.target.value })}
+              className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+            />
+          </Field>
+
+          <Field label="Receipt thank-you line">
+            <input
+              value={draft.receipt_thank_you}
+              onChange={(e) => setDraft({ ...draft, receipt_thank_you: e.target.value })}
+              className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+            />
+            <span className="text-xs text-[var(--ink-400)]">Blank uses &quot;Thank you for dining with us!&quot;.</span>
+          </Field>
+
+          <Field label="Receipt closing line">
+            <input
+              value={draft.receipt_come_again}
+              onChange={(e) => setDraft({ ...draft, receipt_come_again: e.target.value })}
+              className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
+            />
+            <span className="text-xs text-[var(--ink-400)]">Blank uses &quot;Please Come Again Soon&quot;.</span>
           </Field>
         </section>
 
