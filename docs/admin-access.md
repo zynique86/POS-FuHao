@@ -41,6 +41,12 @@ as $$
 $$;
 ```
 
+Copy the **whole** block above, including the closing `$$;` on the last line — if
+the SQL Editor only gets part of it (a common copy/paste slip), it fails with
+`ERROR: 42601: unterminated dollar-quoted string`. Also keep the full existing
+email list in the `in (...)` — replacing it with just one email removes
+everyone else's admin access.
+
 Keep the email list here identical to `ADMIN_EMAILS` in `lib/admin-emails.ts` — they
 must match exactly or the UI and the actual permission check will disagree.
 

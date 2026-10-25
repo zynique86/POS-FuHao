@@ -19,6 +19,22 @@ export async function removeOrder(
   const trimmed = reason.trim();
   if (!trimmed) throw new Error('A reason is required to remove an order.');
 
+  // An order with partial payments already recorded (a split bill in
+  // progress) voiding here would just drop that cash from the books — the
+  // UI already hides this action in that case, but guard it here too since
+  // removeOrder() has no other server-side enforcement.
+  const { data: existingPayments, error: payErr } = await supabase
+    .from('payments')
+    .select('id')
+    .eq('order_id', orderId)
+    .limit(1);
+  if (payErr) throw payErr;
+  if (existingPayments && existingPayments.length > 0) {
+    throw new Error(
+      'This order already has a payment recorded. Refund it instead of removing it.'
+    );
+  }
+
   const me = await getCurrentUser();
   const now = new Date().toISOString();
 

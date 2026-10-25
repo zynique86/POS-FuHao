@@ -472,7 +472,7 @@ function PageHeader({
           type="number"
           min={1}
           value={tableNo}
-          onChange={(e) => onTable(Math.max(1, Number(e.target.value) || 1))}
+          onChange={(e) => onTable(Math.max(1, Math.trunc(Number(e.target.value)) || 1))}
           className="w-14 text-center font-mono text-2xl font-bold text-[var(--brand-700)] bg-transparent focus:outline-none"
         />
         <button
