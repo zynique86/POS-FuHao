@@ -61,6 +61,7 @@ node printer-service/bin/preview.js all      # the default
 
 Every line is capped at 42 columns (3-column safety margin on each side of
 48-col 80mm paper); the `WIDTH` constant in `layouts/format.js` is the single
-source of truth. The byte-exact snapshots in
-`printer-service/__tests__/layouts.test.js` and an `assertWidth` guard enforce
-both rules on every PR.
+source of truth. There is no automated test suite — use the preview CLI above.
+
+Receipt header and footer (shop name, address, phone, tax ID, wifi, thank-you
+lines) come from Admin > Settings (`shop_settings`), not from `.env`.
