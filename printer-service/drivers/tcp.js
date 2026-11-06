@@ -109,10 +109,16 @@ function create(config) {
     const s = String(text);
 
     if (!printChinese) {
+      // Only tidy spacing when CJK was actually removed (to close the gap it
+      // leaves). Layout padding on pure-ASCII lines — right-aligned prices,
+      // centring — must reach the printer untouched.
+      const hadCjk = s.search(CJK_STRIP) !== -1;
       let ascii = s.replace(CJK_STRIP, '');
-      ascii = ascii.replace(/ +([,.;:])/g, '$1');
-      ascii = ascii.replace(/(\S) {2,}/g, '$1 ');
-      ascii = ascii.replace(/[\s/·|]+$/g, '');
+      if (hadCjk) {
+        ascii = ascii.replace(/ +([,.;:])/g, '$1');
+        ascii = ascii.replace(/(\S) {2,}/g, '$1 ');
+        ascii = ascii.replace(/[\s/·|]+$/g, '');
+      }
       ascii = ascii.replace(/[ \t]+$/g, '');
       if (!/[A-Za-z0-9]/.test(ascii)) return;
       printer.println(ascii);
