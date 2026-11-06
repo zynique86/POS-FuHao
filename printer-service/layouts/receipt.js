@@ -19,16 +19,25 @@ function hasText(s) {
   return s != null && String(s).trim() !== '';
 }
 
-// Render one item block: price-bearing line + modifier lines indented with "-".
-// A modifier may carry an upcharge in parentheses, e.g. "Extra Cheese (+1.50)".
+// Render one item block: "QTY  NAME ........ PRICE" with the price flush to the
+// right margin.  Long names wrap onto continuation lines (indented under the
+// name) so the price column never moves; modifiers wrap the same way.
+const QTY_COL = 5;  // 2-char qty + 3 spaces
+
 function itemLines(item) {
   const qty = String(item.qty ?? 1);
-  // "QTY  ITEM"  → 2-char qty column, 2-space gap, then name.
-  const left = `${qty.padStart(2, ' ')}   ${item.name ?? ''}`;
   const right = amount(Number(item.priceAtTime ?? 0) * Number(item.qty ?? 1));
-  const out = [twoCol(left, right, WIDTH)];
-  for (const mod of modifiersOf(item)) out.push(`     - ${mod.text}`);
-  if (hasText(item.note)) out.push(`     - ${item.note}`);
+  const nameW = Math.max(8, WIDTH - QTY_COL - right.length - 1);
+  const nameLines = wrap(item.name ?? '', nameW);
+  if (nameLines.length === 0) nameLines.push('');
+  const out = [twoCol(`${qty.padStart(2, ' ')}   ${nameLines[0]}`, right, WIDTH)];
+  for (const l of nameLines.slice(1)) out.push(' '.repeat(QTY_COL) + l);
+  const subs = modifiersOf(item).map((m) => m.text);
+  if (hasText(item.note)) subs.push(String(item.note));
+  for (const t of subs) {
+    const w = wrap(t, WIDTH - QTY_COL - 2);
+    w.forEach((l, i) => out.push(' '.repeat(QTY_COL) + (i === 0 ? '- ' : '  ') + l));
+  }
   return out;
 }
 
@@ -47,19 +56,17 @@ function modifiersOf(item) {
   });
 }
 
-// Right-aligned totals block (mockup columns ~14..42) — label on the left of
-// the block, amount flush to the right margin.  The 14-column prefix is just
-// visual: the whole block is wrapped by twoCol so it still fits WIDTH.
-function totalsRow(label, value) {
-  return twoCol(' '.repeat(14) + label + ':', money(value), WIDTH);
+// Label flush left, amount flush right at the paper width.  Used for every
+// money row below the item list so all amounts share one right edge.  Long
+// labels (e.g. a discount reason) are cut so the amount is never displaced.
+function moneyRow(label, value) {
+  const r = money(value);
+  const max = WIDTH - r.length - 1;
+  const l = label.length > max ? label.slice(0, max) : label;
+  return twoCol(l, r, WIDTH);
 }
-
-// A full-width payment line, "Label:   RM X.XX" — reads flush left to balance
-// the right-aligned totals above it.
-function payLine(label, value) {
-  const l = (label + ':').padEnd(14);
-  return l + money(value);
-}
+const totalsRow = (label, value) => moneyRow(label, value);
+const payLine = (label, value) => moneyRow(label, value);
 
 function build(data) {
   const {
@@ -129,7 +136,7 @@ function build(data) {
   const rounding = Number(totals.rounding) || 0;
   const total    = Number(totals.total) || 0;
 
-  out.push(totalsRow('SUBTOTAL', subtotal));
+  out.push(totalsRow('Subtotal', subtotal));
   if (svc > 0) {
     const label = svcPct ? `Svc Charge (${svcPct}%)` : 'Svc Charge';
     out.push(totalsRow(label, svc));
@@ -146,7 +153,7 @@ function build(data) {
   }
   if (rounding !== 0) out.push(totalsRow('Rounding', rounding));
   // Underline above TOTAL — a short dashes rule inside the right block.
-  out.push(' '.repeat(14) + '-'.repeat(WIDTH - 14));
+  out.push({ rule: '-' });
   out.push({ text: totalsRow('TOTAL', total), bold: true });
   out.push({ feed: 1 });
 
@@ -158,8 +165,8 @@ function build(data) {
     // Wrap long card detail lines so they never clip at the right margin.
     for (const l of wrap(label, WIDTH)) out.push(l);
   }
-  if (payment.amountPaid != null) out.push(payLine('Amount Paid',  payment.amountPaid));
-  if (payment.changeDue != null)  out.push(payLine('Change Due',   payment.changeDue));
+  if (payment.amountPaid != null) out.push(payLine('Amount Paid', payment.amountPaid));
+  if (payment.changeDue != null)  out.push(payLine('Change Due', payment.changeDue));
 
   // --- Footer -------------------------------------------------------------
   out.push({ rule: '-' });
