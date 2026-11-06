@@ -393,6 +393,14 @@ async function handleReceipt(job, station) {
       method: String(method || '').toUpperCase(),
       amountPaid: received,
       changeDue: change,
+      splits: (pays || [])
+        .filter((p) => Number(p.amount) > 0 && (p.status == null || p.status === 'succeeded'))
+        .map((p) => ({
+          method: String(p.method || '').toUpperCase(),
+          amount: Number(p.amount),
+          received: p.received != null ? Number(p.received) : null,
+          change: p.change_given != null ? Number(p.change_given) : 0,
+        })),
     },
     footer: {
       wifiSsid: settings.wifi_ssid,

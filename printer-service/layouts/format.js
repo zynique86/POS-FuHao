@@ -36,7 +36,7 @@ function twoCol(left, right, w = WIDTH) {
     return l + ' '.repeat(w - l.length - r.length) + r;
   }
   const roomForLeft = Math.max(0, w - r.length - 2);
-  const trimmed = roomForLeft > 0 ? l.slice(0, roomForLeft - 1) + '…' : '';
+  const trimmed = roomForLeft > 0 ? l.slice(0, roomForLeft - 1) + '.' : '';
   return trimmed + ' '.repeat(Math.max(1, w - trimmed.length - r.length)) + r;
 }
 

@@ -27,7 +27,7 @@ const QTY_COL = 5;  // 2-char qty + 3 spaces
 function itemLines(item) {
   const qty = String(item.qty ?? 1);
   const right = amount(Number(item.priceAtTime ?? 0) * Number(item.qty ?? 1));
-  const nameW = Math.max(8, WIDTH - QTY_COL - right.length - 1);
+  const nameW = Math.max(8, WIDTH - QTY_COL - right.length - 2);
   const nameLines = wrap(item.name ?? '', nameW);
   if (nameLines.length === 0) nameLines.push('');
   const out = [twoCol(`${qty.padStart(2, ' ')}   ${nameLines[0]}`, right, WIDTH)];
@@ -158,15 +158,28 @@ function build(data) {
   out.push({ feed: 1 });
 
   // --- Payment block (left-aligned) ---------------------------------------
-  if (payment.method) {
+  if (Array.isArray(payment.splits) && payment.splits.length > 1) {
+    // Split bill: one row per payment (method + amount applied), then the
+    // cash handed over in total and the change given back.
+    out.push('Payments:');
+    for (const sp of payment.splits) {
+      out.push(moneyRow(`  ${sp.method}`, sp.amount));
+    }
+    const given = payment.splits.reduce((a, sp) => a + (Number(sp.received) || Number(sp.amount) || 0), 0);
+    const change = payment.splits.reduce((a, sp) => a + (Number(sp.change) || 0), 0);
+    out.push(payLine('Total Paid', given));
+    out.push(payLine('Change Due', change));
+  } else if (payment.method) {
     const label = payment.detail
       ? `Payment Method: ${payment.method} ${payment.detail}`
       : `Payment Method: ${payment.method}`;
     // Wrap long card detail lines so they never clip at the right margin.
     for (const l of wrap(label, WIDTH)) out.push(l);
   }
-  if (payment.amountPaid != null) out.push(payLine('Amount Paid', payment.amountPaid));
-  if (payment.changeDue != null)  out.push(payLine('Change Due', payment.changeDue));
+  if (!(Array.isArray(payment.splits) && payment.splits.length > 1)) {
+    if (payment.amountPaid != null) out.push(payLine('Amount Paid', payment.amountPaid));
+    if (payment.changeDue != null)  out.push(payLine('Change Due', payment.changeDue));
+  }
 
   // --- Footer -------------------------------------------------------------
   out.push({ rule: '-' });
