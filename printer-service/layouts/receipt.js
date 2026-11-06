@@ -27,7 +27,7 @@ const QTY_COL = 5;  // 2-char qty + 3 spaces
 function itemLines(item) {
   const qty = String(item.qty ?? 1);
   const right = amount(Number(item.priceAtTime ?? 0) * Number(item.qty ?? 1));
-  const nameW = Math.max(8, WIDTH - QTY_COL - right.length - 1);
+  const nameW = Math.max(8, WIDTH - QTY_COL - right.length - 2);
   const nameLines = wrap(item.name ?? '', nameW);
   if (nameLines.length === 0) nameLines.push('');
   const out = [twoCol(`${qty.padStart(2, ' ')}   ${nameLines[0]}`, right, WIDTH)];
