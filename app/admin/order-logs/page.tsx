@@ -8,6 +8,7 @@ import { AdminPageHeader, EmptyState } from '@/components/ui';
 import { listOrderLogs } from '@/lib/order-actions';
 import { supabase } from '@/lib/supabase';
 import type { OrderLog } from '@/lib/types';
+import { ADMIN_MAIN } from '@/lib/admin-layout';
 
 export default function OrderLogsPage() {
   const [logs, setLogs] = useState<OrderLog[]>([]);
@@ -30,7 +31,7 @@ export default function OrderLogsPage() {
   }, []);
 
   return (
-    <main className="min-h-[calc(100vh-56px)] max-w-[1400px] mx-auto px-4 md:px-8 py-8">
+    <main className={ADMIN_MAIN}>
       <AdminPageHeader
         title="Order Log"
         sub="Every order removal and table change, with who did it and why."
@@ -41,7 +42,7 @@ export default function OrderLogsPage() {
       ) : logs.length === 0 ? (
         <EmptyState emoji="📝" title="No actions yet" sub="Removals and table changes will show up here." />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 md:gap-3 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-2 md:gap-3 items-start">
           {logs.map((l) => (
             <LogRow key={l.id} log={l} />
           ))}

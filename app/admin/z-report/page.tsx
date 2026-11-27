@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { AdminPageHeader } from '@/components/ui';
 import { fetchShiftForDate, type Shift } from '@/lib/shifts';
 import { businessDateStartISO, businessTodayISO, nextDateISO } from '@/lib/datetime';
+import { ADMIN_MAIN } from '@/lib/admin-layout';
 
 type OrderRow = {
   id: number;
@@ -90,7 +91,7 @@ export default function ZReportPage() {
   }, [orders, items]);
 
   return (
-    <main className="min-h-[calc(100vh-56px)] max-w-[1200px] mx-auto px-4 md:px-6 py-6">
+    <main className={ADMIN_MAIN}>
       <AdminPageHeader
         title="Z-Report"
         right={

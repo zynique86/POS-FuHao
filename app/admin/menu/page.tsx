@@ -13,6 +13,7 @@ import {
   useMenuCategories,
   type MenuCategory,
 } from '@/lib/categories';
+import { ADMIN_MAIN } from '@/lib/admin-layout';
 
 // Display metadata for the printer each category routes to.  Routing itself
 // comes from the category list (Categories & printers); this is only for the
@@ -189,7 +190,7 @@ export default function AdminMenuPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-56px)] max-w-[1200px] mx-auto px-4 md:px-6 py-6">
+    <main className={ADMIN_MAIN}>
       <AdminPageHeader
         title="Menu"
         right={
