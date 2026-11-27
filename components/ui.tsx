@@ -3,7 +3,7 @@
 // Shared UI primitives — importing these keeps every screen visually
 // consistent (headers, modals, buttons, form fields, empty states).
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // ─── page header ──────────────────────────────────────────────────────────
 
@@ -62,6 +62,122 @@ export function Field({
         <span className="block text-xs text-[var(--ink-400)] mt-1">{hint}</span>
       )}
     </label>
+  );
+}
+
+// ─── file upload ──────────────────────────────────────────────────────────
+
+// A clearly visible upload area in place of the browser's plain
+// "Choose file / No file chosen" control. Still a real <input type="file">
+// underneath (visually hidden), so tap-to-pick on phones, keyboard focus and
+// the `accept` filter all behave as before. Desktop users can also drag a
+// file onto the area. Controlled: pass the chosen file back in via `file`,
+// and pass null to clear it (the hidden input is reset too).
+export function FileUpload({
+  label,
+  hint,
+  file,
+  onChange,
+  accept,
+  buttonText = 'Upload file',
+  icon = '📎',
+}: {
+  label: string;
+  hint?: string;
+  file: File | null;
+  onChange: (file: File | null) => void;
+  accept?: string;
+  buttonText?: string;
+  icon?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    if (!file && inputRef.current) inputRef.current.value = '';
+  }, [file]);
+
+  function accepts(f: File) {
+    if (!accept) return true;
+    return accept.split(',').some((rule) => {
+      const r = rule.trim().toLowerCase();
+      if (!r) return false;
+      if (r.startsWith('.')) return f.name.toLowerCase().endsWith(r);
+      if (r.endsWith('/*')) return f.type.toLowerCase().startsWith(r.slice(0, -1));
+      return f.type.toLowerCase() === r;
+    });
+  }
+
+  const sizeKb = file ? file.size / 1024 : 0;
+  const sizeText = sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(sizeKb))} KB`;
+
+  return (
+    <div className="mb-3">
+      <span className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-1.5 font-semibold">
+        {label}
+      </span>
+      <label
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f && accepts(f)) onChange(f);
+        }}
+        className={`flex items-center gap-3 w-full px-4 py-4 rounded-xl border-2 border-dashed cursor-pointer transition focus-within:ring-4 focus-within:ring-[var(--brand-100)] ${
+          dragging
+            ? 'border-[var(--brand-500)] bg-[var(--brand-50)]'
+            : file
+            ? 'border-[var(--brand-500)] bg-white'
+            : 'border-[var(--ink-300)] bg-[var(--ink-100)] hover:border-[var(--brand-500)] hover:bg-[var(--brand-50)]'
+        }`}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          className="sr-only"
+          onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+        />
+        <span
+          className="shrink-0 w-11 h-11 rounded-xl flex items-center justify-center text-xl bg-white border border-[var(--ink-200)]"
+          aria-hidden
+        >
+          {file ? '✅' : icon}
+        </span>
+        <span className="min-w-0 flex-1">
+          {file ? (
+            <>
+              <span className="block text-sm font-semibold text-[var(--ink-900)] break-all line-clamp-2">{file.name}</span>
+              <span className="block text-xs text-[var(--ink-500)]">{sizeText} · Tap to change</span>
+            </>
+          ) : (
+            <>
+              <span className="block text-sm font-bold text-[var(--brand-700)]">{buttonText}</span>
+              <span className="block text-xs text-[var(--ink-500)]">Tap to choose a file, or drag it here</span>
+            </>
+          )}
+        </span>
+        {file && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onChange(null);
+            }}
+            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[var(--ink-200)] bg-white text-[var(--ink-700)] hover:bg-[var(--ink-100)]"
+          >
+            Remove
+          </button>
+        )}
+      </label>
+      {hint && <span className="block text-xs text-[var(--ink-400)] mt-1">{hint}</span>}
+    </div>
   );
 }
 
