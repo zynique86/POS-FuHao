@@ -90,7 +90,7 @@ export default function RestockPage() {
     <main className="min-h-[calc(100vh-56px)] max-w-[1600px] mx-auto px-4 md:px-6 py-5 md:py-6">
       <header className="mb-5 md:mb-6">
         <p className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]">
-          Front counter · 前檯
+          Front counter
         </p>
         <div className="flex flex-wrap items-end justify-between gap-2 mt-1">
           <h1 className="text-2xl md:text-4xl font-bold text-[var(--ink-900)]">
@@ -325,7 +325,7 @@ function RestockModal({
             <span className="text-white">🔥</span>
           </div>
           <h2 className="text-xl font-bold text-[var(--ink-900)]">Restock request</h2>
-          <p className="text-sm text-[var(--ink-500)] mt-1">Prints at 👨‍🍳 Back Kitchen · 後廚</p>
+          <p className="text-sm text-[var(--ink-500)] mt-1">Prints at 👨‍🍳 Back Kitchen</p>
         </div>
 
         <div className="bg-[var(--cream-100)] rounded-2xl p-4 mb-4 text-center">

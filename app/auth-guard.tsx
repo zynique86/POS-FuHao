@@ -21,7 +21,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [shop, setShop] = useState<{ name: string; nameZh: string }>({
     name: 'Dim Sum POS',
-    nameZh: '點心 · Point of Sale',
+    nameZh: 'Point of Sale',
   });
 
   useEffect(() => {
@@ -32,7 +32,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       if (!cancelled) {
         setShop({
           name: s.shop_name || 'Dim Sum POS',
-          nameZh: s.shop_name_zh || '點心 · Point of Sale',
+          nameZh: s.shop_name_zh || 'Point of Sale',
         });
       }
     }

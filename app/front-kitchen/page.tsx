@@ -14,7 +14,6 @@ export default function FrontKitchenPage() {
     <StationDisplay
       station="cashier"
       title="Front Kitchen"
-      titleZh="前廚"
       emoji="🥟"
     />
   );

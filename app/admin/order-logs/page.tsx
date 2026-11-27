@@ -33,7 +33,6 @@ export default function OrderLogsPage() {
     <main className="min-h-[calc(100vh-56px)] max-w-[1100px] mx-auto px-4 md:px-8 py-8">
       <AdminPageHeader
         title="Order Log"
-        titleZh="操作記錄"
         sub="Every order removal and table change, with who did it and why."
       />
 

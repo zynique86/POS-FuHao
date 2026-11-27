@@ -155,12 +155,12 @@ export type ShopSettings = {
 
 export type PayMethod = 'cash' | 'duitnow_qr' | 'card' | 'bank_transfer' | 'other';
 
-export const PAY_METHOD_LABELS: Record<PayMethod, { label: string; label_zh: string; emoji: string }> = {
-  cash:          { label: 'Cash',          label_zh: '現金',    emoji: '💵' },
-  duitnow_qr:    { label: 'TNG / DuitNow', label_zh: '電子錢包', emoji: '📱' },
-  card:          { label: 'Card',          label_zh: '刷卡',    emoji: '💳' },
-  bank_transfer: { label: 'Bank Transfer', label_zh: '銀行轉賬', emoji: '🏦' },
-  other:         { label: 'Other',         label_zh: '其他',    emoji: '📝' },
+export const PAY_METHOD_LABELS: Record<PayMethod, { label: string; emoji: string }> = {
+  cash:          { label: 'Cash',          emoji: '💵' },
+  duitnow_qr:    { label: 'TNG / DuitNow', emoji: '📱' },
+  card:          { label: 'Card',          emoji: '💳' },
+  bank_transfer: { label: 'Bank Transfer', emoji: '🏦' },
+  other:         { label: 'Other',         emoji: '📝' },
 };
 
 export type Payment = {
@@ -230,13 +230,13 @@ export type ExpenseKind =
   | 'rent'
   | 'utility';
 
-export const EXPENSE_LABELS: Record<ExpenseKind, { label: string; label_zh: string; emoji: string }> = {
-  wages:    { label: 'Staff Wages',   label_zh: '員工工資', emoji: '💰' },
-  meal:     { label: 'Staff Meal',    label_zh: '員工伙食', emoji: '🍱' },
-  purchase: { label: 'Daily Purchase',label_zh: '當日採購', emoji: '🛒' },
-  other:    { label: 'Other Expense', label_zh: '其他支出', emoji: '📝' },
-  rent:     { label: 'Rent',          label_zh: '租金',    emoji: '🏢' },
-  utility:  { label: 'Utility',       label_zh: '水電費',  emoji: '💡' },
+export const EXPENSE_LABELS: Record<ExpenseKind, { label: string; emoji: string }> = {
+  wages:    { label: 'Staff Wages',   emoji: '💰' },
+  meal:     { label: 'Staff Meal',    emoji: '🍱' },
+  purchase: { label: 'Daily Purchase',emoji: '🛒' },
+  other:    { label: 'Other Expense', emoji: '📝' },
+  rent:     { label: 'Rent',          emoji: '🏢' },
+  utility:  { label: 'Utility',       emoji: '💡' },
 };
 
 export type Expense = {

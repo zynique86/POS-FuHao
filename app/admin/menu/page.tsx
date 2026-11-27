@@ -10,9 +10,9 @@ import { MENU_CATEGORIES, stationForCategory, type ItemModifier, type MenuItem, 
 // Display metadata for the printer each category routes to.  Routing itself
 // lives in stationForCategory(); this is only for the admin badges/editor.
 const STATION_META: Record<PrintStation, { label: string; emoji: string; bg: string; fg: string }> = {
-  kitchen: { label: 'Back Kitchen 後廚',  emoji: '👨‍🍳', bg: 'var(--brand-50)',      fg: 'var(--brand-700)' },
-  cashier: { label: 'Front Kitchen 前廚', emoji: '🧾',   bg: 'var(--gold-400)/15',   fg: 'var(--gold-600)' },
-  bar:     { label: 'Bar 水吧',           emoji: '🫖',   bg: 'rgb(6 95 70 / 0.15)',  fg: 'var(--jade-600)' },
+  kitchen: { label: 'Back Kitchen', emoji: '👨‍🍳', bg: 'var(--brand-50)',      fg: 'var(--brand-700)' },
+  cashier: { label: 'Front Kitchen', emoji: '🧾',   bg: 'var(--gold-400)/15',   fg: 'var(--gold-600)' },
+  bar:     { label: 'Bar', emoji: '🫖',   bg: 'rgb(6 95 70 / 0.15)',  fg: 'var(--jade-600)' },
 };
 
 type Draft = {
@@ -190,7 +190,6 @@ export default function AdminMenuPage() {
     <main className="min-h-[calc(100vh-56px)] max-w-[1200px] mx-auto px-4 md:px-6 py-6">
       <AdminPageHeader
         title="Menu"
-        titleZh="菜單"
         right={
           <button
             onClick={startAdd}
@@ -301,7 +300,7 @@ export default function AdminMenuPage() {
                       {!item.is_available
                         ? 'Hidden'
                         : item.temporarily_disabled
-                        ? '售罄 Sold out'
+                        ? 'Sold out'
                         : 'Selling'}
                     </button>
                     <button
@@ -414,7 +413,7 @@ export default function AdminMenuPage() {
               />
             </Field>
 
-            <Field label="Chinese name (中文)">
+            <Field label="Chinese name">
               <input
                 value={draft.name_zh}
                 onChange={(e) => setDraft({ ...draft, name_zh: e.target.value })}
@@ -444,7 +443,7 @@ export default function AdminMenuPage() {
               </Field>
             </div>
 
-            <Field label="Category · 分類">
+            <Field label="Category">
               <select
                 value={draft.category}
                 onChange={(e) => setDraft({ ...draft, category: e.target.value })}
@@ -539,7 +538,7 @@ export default function AdminMenuPage() {
                   className="w-4 h-4 accent-[var(--brand-600)] mt-0.5"
                 />
                 <span>
-                  <b>Available on menu</b> <span className="text-[var(--ink-500)]">· 上架</span>
+                  <b>Available on menu</b>
                   <span className="block text-xs text-[var(--ink-500)] font-normal mt-0.5">
                     Uncheck to permanently remove this item from the POS.
                   </span>
@@ -553,7 +552,7 @@ export default function AdminMenuPage() {
                   className="w-4 h-4 accent-[var(--gold-500)] mt-0.5"
                 />
                 <span>
-                  <b>Sold out today</b> <span className="text-[var(--ink-500)]">· 今日售罄</span>
+                  <b>Sold out today</b>
                   <span className="block text-xs text-[var(--ink-500)] font-normal mt-0.5">
                     Temporarily hides the item from POS without deleting it. Toggle off when back in stock.
                   </span>
@@ -617,7 +616,7 @@ function ModifierAdder({ onAdd }: { onAdd: (m: ItemModifier) => void }) {
         value={zh}
         onChange={(e) => setZh(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), submit())}
-        placeholder="中文 (optional)"
+        placeholder="Chinese (optional)"
         className="min-w-0 w-full px-3 py-2 border border-[var(--ink-200)] rounded-lg text-sm focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
       />
       <button
