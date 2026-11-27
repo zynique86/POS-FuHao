@@ -13,7 +13,7 @@
 // This script never talks to Supabase, the printer, or the network — it
 // only exercises the pure layout functions in printer-service/layouts/.
 
-const { receipt, kitchen, bar, restock, format } = require('../layouts');
+const { receipt, kitchen, bar, restock, test, format } = require('../layouts');
 
 const FIXED_NOW = new Date('2026-10-07T06:32:00Z');  // 14:32 Asia/Kuala_Lumpur
 const TZ = 'Asia/Kuala_Lumpur';
@@ -116,6 +116,16 @@ function previewRestock() {
   }));
 }
 
+function previewTest() {
+  return render(test.build({
+    stationLabel: 'KITCHEN',
+    ip: '192.168.0.103',
+    by: 'Alex',
+    tz: TZ,
+    now: FIXED_NOW,
+  }));
+}
+
 function banner(title) {
   const bar = '─'.repeat(format.WIDTH);
   return `\n${bar}\n  ${title}\n${bar}\n`;
@@ -127,9 +137,10 @@ if (which === 'receipt' || which === 'all') parts.push(banner('RECEIPT') + previ
 if (which === 'kitchen' || which === 'all') parts.push(banner('KITCHEN TICKET') + previewKitchen());
 if (which === 'bar'     || which === 'all') parts.push(banner('BAR TICKET')     + previewBar());
 if (which === 'restock' || which === 'all') parts.push(banner('RESTOCK SLIP')   + previewRestock());
+if (which === 'test'    || which === 'all') parts.push(banner('PRINTER TEST')   + previewTest());
 
 if (parts.length === 0) {
-  console.error(`usage: node printer-service/bin/preview.js [receipt|kitchen|bar|all]`);
+  console.error(`usage: node printer-service/bin/preview.js [receipt|kitchen|bar|restock|test|all]`);
   process.exit(2);
 }
 console.log(parts.join('\n'));
