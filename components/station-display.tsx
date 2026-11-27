@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { fulfillRestock, listPendingRestock } from '@/lib/restock';
+import { loadCategories } from '@/lib/categories';
 import { stationForCategory, type OrderItem, type RestockRequest, type PrintStation } from '@/lib/types';
 
 type OrderRow = {
@@ -45,6 +46,8 @@ export default function StationDisplay({
   // screen always matches where the item actually prints.
   useEffect(() => {
     async function loadMenu() {
+      // Refresh the admin-editable category → printer table first.
+      await loadCategories(true);
       const { data } = await supabase.from('menu_items').select('id, category');
       const m = new Map<number, PrintStation>();
       (data ?? []).forEach((r) => m.set(r.id as number, stationForCategory(r.category as string)));
@@ -54,6 +57,7 @@ export default function StationDisplay({
     const ch = supabase
       .channel(`station-menu-${station}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, () => loadMenu())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'category_station_routing' }, () => loadMenu())
       .subscribe();
     return () => {
       supabase.removeChannel(ch);

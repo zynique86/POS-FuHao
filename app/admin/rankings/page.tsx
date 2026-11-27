@@ -11,7 +11,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { AdminPageHeader, ContentCard, ErrorBanner, EmptyState } from '@/components/ui';
-import { MENU_CATEGORIES, type MenuItem, type OrderItem } from '@/lib/types';
+import { type MenuItem, type OrderItem } from '@/lib/types';
+import { findCategory, useMenuCategories } from '@/lib/categories';
 import { businessDateStartISO, nextDateISO } from '@/lib/datetime';
 
 type RangeKey = 'today' | 'week' | 'month' | 'custom';
@@ -42,6 +43,7 @@ export default function RankingsPage() {
   const [items, setItems] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr]         = useState<string | null>(null);
+  const categories = useMenuCategories();
 
   // Update the actual start/end when the range preset changes.
   useEffect(() => {
@@ -223,8 +225,8 @@ export default function RankingsPage() {
               </h2>
               <ul className="space-y-3">
                 {catRanking.map((c, i) => {
-                  const meta = MENU_CATEGORIES.find((m) => m.key === c.key)
-                    ?? { key: c.key, label: c.key, label_zh: '', emoji: '📦' };
+                  const cat = findCategory(categories, c.key);
+                  const meta = { label: cat?.name ?? c.key, emoji: cat?.emoji ?? '📦' };
                   const pct = totalSales > 0 ? (c.sales / totalSales) * 100 : 0;
                   return (
                     <li key={i}>

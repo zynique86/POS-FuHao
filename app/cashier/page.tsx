@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { loadCategories } from '@/lib/categories';
 import {
   fetchOpenShift,
   openShift,
@@ -1530,6 +1531,7 @@ function VoidModal({
       .select('category')
       .eq('id', menuItemId)
       .maybeSingle();
+    await loadCategories(true);
     const voidStation = stationForCategory(menuRow?.category);
 
     await supabase.from('print_jobs').insert({

@@ -15,6 +15,7 @@ import {
   cancelRestock,
 } from '@/lib/restock';
 import { stationForCategory, type MenuItem, type RestockRequest } from '@/lib/types';
+import { useMenuCategories } from '@/lib/categories';
 
 export default function RestockPage() {
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -22,6 +23,8 @@ export default function RestockPage() {
   const [loading, setLoading] = useState(true);
   const [restockFor, setRestockFor] = useState<MenuItem | null>(null);
   const [nowTick, setNowTick] = useState<number>(0);
+  // Live category → printer list; re-filter when an admin changes it.
+  const categories = useMenuCategories();
 
   // "Time ago" ticker.
   useEffect(() => {
@@ -70,7 +73,8 @@ export default function RestockPage() {
       items.filter(
         (i) => i.is_available !== false && stationForCategory(i.category) === 'cashier'
       ),
-    [items]
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- categories updates the routing stationForCategory reads
+    [items, categories]
   );
 
   async function cancel(id: number) {

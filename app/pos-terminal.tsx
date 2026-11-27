@@ -11,10 +11,10 @@ import { useSettings } from '@/lib/use-settings';
 import { ModalShell, PrimaryBtn, SecondaryBtn } from '@/components/ui';
 import { getCurrentUser } from '@/lib/roles';
 import {
-  MENU_CATEGORIES,
   type MenuItem,
   type ShopSettings,
 } from '@/lib/types';
+import { findCategory, sortByCategoryOrder, useMenuCategories } from '@/lib/categories';
 
 type CartLine = {
   key: string;         // unique per line (so two lines of same item stay distinct)
@@ -56,6 +56,8 @@ export default function POSTerminal({
   const [sending, setSending] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [optionsFor, setOptionsFor] = useState<MenuItem | null>(null);
+  // Admin-editable category list (order, icon, printer) — live.
+  const categories = useMenuCategories();
 
   // Live menu
   useEffect(() => {
@@ -147,13 +149,26 @@ export default function POSTerminal({
       (i) => i.is_available !== false && i.temporarily_disabled !== true
     );
     const counts: Record<string, number> = { all: available.length };
-    for (const c of MENU_CATEGORIES) counts[c.key] = 0;
     for (const it of available) {
       const k = it.category || 'Other';
       counts[k] = (counts[k] || 0) + 1;
     }
     return counts;
   }, [items]);
+
+  // One chip per category that has items: admin-defined order first, then
+  // any category text an item uses that isn't in the list yet.
+  const chips = useMemo(
+    () =>
+      sortByCategoryOrder(
+        Object.keys(categoryCounts).filter((k) => k !== 'all').map((k) => [k, k] as [string, string]),
+        categories
+      ).map(([name]) => {
+        const c = findCategory(categories, name);
+        return { key: name, label: c?.name ?? name, label_zh: c?.name_zh ?? '', emoji: c?.emoji ?? '🍽️' };
+      }),
+    [categoryCounts, categories]
+  );
 
   const grouped = useMemo(() => {
     const m = new Map<string, MenuItem[]>();
@@ -162,18 +177,10 @@ export default function POSTerminal({
       if (!m.has(c)) m.set(c, []);
       m.get(c)!.push(i);
     }
-    // Sort sections in the category order defined in lib/types
-    // (Noodles, Counter, Drinks), then any unrecognised keys.
-    const order = MENU_CATEGORIES.map((c) => c.key);
-    return [...m.entries()].sort(([a], [b]) => {
-      const ia = order.indexOf(a);
-      const ib = order.indexOf(b);
-      if (ia !== -1 && ib !== -1) return ia - ib;
-      if (ia !== -1) return -1;
-      if (ib !== -1) return 1;
-      return a.localeCompare(b);
-    });
-  }, [visibleItems]);
+    // Sort sections in the admin-defined category order, then any
+    // unrecognised keys alphabetically.
+    return sortByCategoryOrder([...m.entries()], categories);
+  }, [visibleItems, categories]);
 
   // Lookup map used by the cart to render thumbnails for existing (sent)
   // items — the order_items row only carries name snapshots, not images.
@@ -318,7 +325,7 @@ export default function POSTerminal({
                   <span className="text-base">🍽️</span>
                   <span>All</span>
                 </FilterChip>
-                {MENU_CATEGORIES.map((c) => {
+                {chips.map((c) => {
                   const n = categoryCounts[c.key] ?? 0;
                   if (n === 0 && categoryFilter !== c.key) return null;
                   return (
@@ -331,9 +338,11 @@ export default function POSTerminal({
                     >
                       <span className="text-base">{c.emoji}</span>
                       <span>{c.label}</span>
-                      <span className="text-[var(--ink-400)] font-normal hidden sm:inline">
-                        · {c.label_zh}
-                      </span>
+                      {c.label_zh && (
+                        <span className="text-[var(--ink-400)] font-normal hidden sm:inline">
+                          · {c.label_zh}
+                        </span>
+                      )}
                     </FilterChip>
                   );
                 })}
@@ -346,14 +355,15 @@ export default function POSTerminal({
               since the filter chip above already names it. */}
           <div className="space-y-6">
             {grouped.map(([category, list]) => {
-              const meta = MENU_CATEGORIES.find((c) => c.key === category);
+              const cat = findCategory(categories, category);
+              const meta = cat && { emoji: cat.emoji ?? '🍽️', label: cat.name, label_zh: cat.name_zh ?? '' };
               return (
               <section key={category}>
                 {categoryFilter === 'all' && (
                   <h2 className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold mb-3 flex items-baseline gap-2">
                     {meta && <span className="text-base">{meta.emoji}</span>}
                     <span>{meta ? meta.label : category}</span>
-                    {meta && (
+                    {meta && meta.label_zh && (
                       <span className="text-[var(--ink-400)] font-normal normal-case tracking-normal">
                         · {meta.label_zh}
                       </span>
