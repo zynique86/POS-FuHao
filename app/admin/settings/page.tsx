@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { fetchSettings } from '@/lib/settings';
 import { computeBreakdown } from '@/lib/pricing';
-import { AdminPageHeader } from '@/components/ui';
+import { AdminPageHeader, FileUpload } from '@/components/ui';
 import type { ShopSettings } from '@/lib/types';
 
 type Draft = {
@@ -27,9 +27,11 @@ export default function AdminSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [qrUrl, setQrUrl] = useState('');
 
   useEffect(() => {
     fetchSettings().then((s) => {
+      setQrUrl(s.payment_qr_url ?? '');
       setDraft({
         shop_name: s.shop_name,
         shop_name_zh: s.shop_name_zh,
@@ -236,6 +238,8 @@ export default function AdminSettingsPage() {
         </section>
       </div>
 
+      <PaymentQrSection url={qrUrl} onChange={setQrUrl} />
+
       <div className="mt-6 flex items-center gap-3">
         <button
           onClick={save}
@@ -254,6 +258,130 @@ export default function AdminSettingsPage() {
         {err && <span className="text-[var(--brand-700)] text-sm">{err}</span>}
       </div>
     </main>
+  );
+}
+
+// ─── QR payment ───────────────────────────────────────────────────────────
+// The shop's static payment QR (Touch 'n Go eWallet / DuitNow National QR)
+// shown on the cashier's QR payment screen. Saved straight away on upload,
+// separately from the "Save settings" button, so a half-edited form can't
+// lose the image and an older database without the column doesn't block
+// saving the other settings.
+const QR_BUCKET = 'payment-qr';
+
+function PaymentQrSection({ url, onChange }: { url: string; onChange: (url: string) => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function saveUrl(next: string) {
+    const { error } = await supabase
+      .from('shop_settings')
+      .update({ payment_qr_url: next, updated_at: new Date().toISOString() })
+      .eq('id', 1);
+    if (error) {
+      // Most likely cause on an un-migrated database.
+      if (/payment_qr_url/.test(error.message)) {
+        throw new Error('The database is missing the payment QR column. Run migrations/payment_qr.sql in Supabase first.');
+      }
+      throw new Error(error.message);
+    }
+  }
+
+  async function upload(f: File | null) {
+    setFile(f);
+    setMsg(null);
+    if (!f) return;
+    if (!f.type.startsWith('image/')) {
+      setMsg({ ok: false, text: 'Please pick an image file (PNG or JPG).' });
+      return;
+    }
+    if (f.size > 5 * 1024 * 1024) {
+      setMsg({ ok: false, text: 'Image is too big (5 MB max).' });
+      return;
+    }
+    setBusy(true);
+    try {
+      const ext = (f.name.split('.').pop() ?? 'png').toLowerCase();
+      // New file name every time so phones/iPads never show a cached old QR.
+      const path = `shop-qr-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage
+        .from(QR_BUCKET)
+        .upload(path, f, { cacheControl: '3600', upsert: false, contentType: f.type });
+      if (error) throw new Error(error.message);
+      const { data } = supabase.storage.from(QR_BUCKET).getPublicUrl(path);
+      await saveUrl(data.publicUrl);
+      onChange(data.publicUrl);
+      setFile(null);
+      setMsg({ ok: true, text: 'QR saved. The cashier screen now shows this QR.' });
+    } catch (e: unknown) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : 'Upload failed' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await saveUrl('');
+      onChange('');
+      setMsg({ ok: true, text: 'QR removed.' });
+    } catch (e: unknown) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : 'Could not remove' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section
+      className="mt-6 bg-white rounded-3xl p-6 border border-[var(--ink-200)]"
+      style={{ boxShadow: 'var(--shadow-sm)' }}
+    >
+      <h2 className="text-lg font-bold text-[var(--ink-900)] mb-1">QR payment</h2>
+      <p className="text-sm text-[var(--ink-500)] mb-5">
+        Your shop&apos;s Touch &apos;n Go / DuitNow QR. The cashier shows it to the customer when they
+        pay by QR. Upload the QR image exactly as your eWallet app gives it.
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-6 items-start">
+        <div className="rounded-2xl border border-[var(--ink-200)] bg-[var(--cream-100)] p-3 flex items-center justify-center min-h-[220px]">
+          {url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={url} alt="Shop payment QR" className="max-h-[320px] w-auto rounded-xl" />
+          ) : (
+            <span className="text-sm text-[var(--ink-400)] text-center">No QR uploaded yet</span>
+          )}
+        </div>
+        <div>
+          <FileUpload
+            label={url ? 'Replace QR image' : 'Upload QR image'}
+            hint="PNG or JPG, max 5 MB. Saved as soon as it uploads."
+            accept="image/*"
+            file={file}
+            onChange={upload}
+            buttonText={busy ? 'Uploading…' : 'Upload QR image'}
+            icon="📱"
+          />
+          {url && (
+            <button
+              type="button"
+              onClick={remove}
+              disabled={busy}
+              className="px-4 py-2 rounded-xl text-sm font-semibold border border-[var(--ink-200)] bg-white text-[var(--ink-700)] hover:bg-[var(--ink-100)] disabled:opacity-60"
+            >
+              Remove QR
+            </button>
+          )}
+          {msg && (
+            <p className={`mt-3 text-sm ${msg.ok ? 'text-[var(--jade-600)] font-semibold' : 'text-[var(--brand-700)]'}`}>
+              {msg.text}
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

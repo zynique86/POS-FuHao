@@ -154,6 +154,9 @@ export type ShopSettings = {
   wifi_password?: string | null;
   receipt_thank_you?: string | null;
   receipt_come_again?: string | null;
+  // Public URL of the shop's static payment QR image (TNG eWallet / DuitNow
+  // National QR), uploaded in Admin > Settings. Blank = none uploaded.
+  payment_qr_url?: string | null;
   // Optional DuitNow merchant details — unset until the shop supplies them
   // in Admin > Settings. When any of these is missing the cashier screen
   // shows a decorative placeholder instead of generating an invalid QR.

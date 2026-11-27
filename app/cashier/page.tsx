@@ -3,6 +3,7 @@
 // Cashier — redesigned. Voids, reprints, split bills, payment flows.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 import { loadCategories } from '@/lib/categories';
 import {
@@ -1334,6 +1335,8 @@ function DuitNowPanel({
   onConfirm: () => void;
 }) {
   const settings = useSettings();
+  const shopQrUrl = (settings.payment_qr_url || '').trim();
+  const [fullScreen, setFullScreen] = useState(false);
   const merchantId = (settings.duitnow_merchant_id || '').trim();
   const merchantName = (settings.duitnow_merchant_name || '').trim();
   const merchantCity = (settings.duitnow_merchant_city || '').trim();
@@ -1353,6 +1356,43 @@ function DuitNowPanel({
     } catch (e) {
       payloadError = e instanceof Error ? e.message : String(e);
     }
+  }
+
+  // The shop's own static QR (uploaded in Admin > Settings) takes priority.
+  // A static QR has no amount inside it, so the customer types the amount in
+  // their app — show it big, and make the cashier check the money arrived.
+  if (shopQrUrl) {
+    return (
+      <div className="text-center">
+        <p className="text-sm text-[var(--ink-500)] mb-1">Customer scans and enters</p>
+        <p className="text-3xl font-bold font-mono text-[var(--brand-700)] mb-3">RM {amount.toFixed(2)}</p>
+        <button
+          type="button"
+          onClick={() => setFullScreen(true)}
+          className="block w-full mb-2 rounded-2xl border border-[var(--ink-200)] bg-white p-2"
+          aria-label="Show QR full screen"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={shopQrUrl} alt="Shop payment QR" className="mx-auto max-h-[52vh] w-auto rounded-xl" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setFullScreen(true)}
+          className="w-full mb-3 py-3 rounded-2xl text-sm font-bold border-2 border-[var(--brand-500)] text-[var(--brand-700)] bg-[var(--brand-50)]"
+        >
+          ⛶ Show full screen to customer
+        </button>
+        <p className="text-xs text-[var(--ink-500)] mb-4">
+          Check that RM {amount.toFixed(2)} has arrived in the shop&apos;s eWallet before confirming.
+        </p>
+        <ConfirmBtn onClick={onConfirm} disabled={busy} busy={busy}>
+          Payment Received — Confirm
+        </ConfirmBtn>
+        {fullScreen && (
+          <QrFullScreen url={shopQrUrl} amount={amount} orderId={orderId} onClose={() => setFullScreen(false)} />
+        )}
+      </div>
+    );
   }
 
   return (
@@ -1378,13 +1418,63 @@ function DuitNowPanel({
         <p className="text-xs text-[var(--ink-400)] mb-4">
           {payloadError
             ? `DuitNow QR unavailable: ${payloadError}`
-            : 'Set DuitNow merchant details in Admin > Settings to generate a scannable QR.'}
+            : 'No shop QR yet. Upload it in Admin > Settings > QR payment.'}
         </p>
       )}
       <ConfirmBtn onClick={onConfirm} disabled={busy} busy={busy}>
         Customer Paid — Confirm
       </ConfirmBtn>
     </div>
+  );
+}
+
+// Customer-facing view: turn the iPad / laptop screen to the customer.
+// White background and the largest QR the screen allows, with the amount
+// beside it (landscape) or above it (portrait). Tap anywhere to close.
+function QrFullScreen({
+  url,
+  amount,
+  orderId,
+  onClose,
+}: {
+  url: string;
+  amount: number;
+  orderId: number;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // Portal to <body>: the payment modal keeps a CSS transform from its
+  // entrance animation, which would trap a `fixed` child inside the modal.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] bg-white flex flex-col landscape:flex-row items-center justify-center gap-4 landscape:gap-10 p-4"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+      role="dialog"
+      aria-label="Payment QR"
+    >
+      <div className="text-center shrink-0">
+        <p className="text-base md:text-xl uppercase tracking-widest text-[var(--ink-500)] font-semibold">Please pay</p>
+        <p className="text-5xl md:text-7xl font-bold font-mono text-[var(--brand-700)] mt-1">RM {amount.toFixed(2)}</p>
+        <p className="text-sm md:text-base text-[var(--ink-500)] mt-3">Scan with Touch &apos;n Go or any banking app</p>
+        <p className="text-xs text-[var(--ink-400)] font-mono mt-1">Order #{orderId}</p>
+      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt="Shop payment QR"
+        className="min-h-0 flex-1 max-h-[70vh] landscape:max-h-[94vh] w-auto max-w-full object-contain"
+      />
+      <p className="absolute bottom-3 left-0 right-0 text-center text-xs text-[var(--ink-400)]">Tap anywhere to close</p>
+    </div>,
+    document.body
   );
 }
 
