@@ -10,7 +10,6 @@ export default function BarPage() {
     <StationDisplay
       station="bar"
       title="Bar"
-      titleZh="水吧"
       emoji="🫖"
     />
   );

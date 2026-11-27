@@ -9,10 +9,10 @@ export default function AdminPage() {
       <header className="mb-8 flex flex-wrap justify-between items-end gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.25em] text-[var(--ink-500)]">
-            Manager · 老闆
+            Manager
           </p>
           <h1 className="text-4xl md:text-5xl font-bold text-[var(--ink-900)] mt-2 tracking-tight">
-            Dashboard <span className="text-[var(--ink-500)] font-normal text-2xl md:text-3xl ml-2">· 儀表板</span>
+            Dashboard
           </h1>
           <p className="text-sm text-[var(--ink-500)] mt-2">
             {new Date().toLocaleDateString('en-MY', {
@@ -24,13 +24,13 @@ export default function AdminPage() {
           </p>
         </div>
         <nav className="flex flex-wrap gap-2 no-print">
-          <NavCard href="/admin/menu"           emoji="🥟" label="Menu"           zh="菜單" />
-          <NavCard href="/admin/expenses"       emoji="💰" label="Daily Expenses" zh="每日支出" />
-          <NavCard href="/admin/z-report"       emoji="📋" label="Daily Closing"  zh="關店報表" />
-          <NavCard href="/admin/monthly-report" emoji="📊" label="Monthly Report" zh="月結報表" />
-          <NavCard href="/admin/rankings"       emoji="🏆" label="Rankings"       zh="銷售排行" />
-          <NavCard href="/admin/order-logs"     emoji="📝" label="Order Log"      zh="操作記錄" />
-          <NavCard href="/admin/settings"       emoji="⚙️" label="Settings"       zh="設置" />
+          <NavCard href="/admin/menu"           emoji="🥟" label="Menu" />
+          <NavCard href="/admin/expenses"       emoji="💰" label="Daily Expenses" />
+          <NavCard href="/admin/z-report"       emoji="📋" label="Daily Closing" />
+          <NavCard href="/admin/monthly-report" emoji="📊" label="Monthly Report" />
+          <NavCard href="/admin/rankings"       emoji="🏆" label="Rankings" />
+          <NavCard href="/admin/order-logs"     emoji="📝" label="Order Log" />
+          <NavCard href="/admin/settings"       emoji="⚙️" label="Settings" />
         </nav>
       </header>
 
@@ -39,7 +39,7 @@ export default function AdminPage() {
   );
 }
 
-function NavCard({ href, emoji, label, zh }: { href: string; emoji: string; label: string; zh: string }) {
+function NavCard({ href, emoji, label }: { href: string; emoji: string; label: string }) {
   return (
     <a
       href={href}
@@ -47,10 +47,7 @@ function NavCard({ href, emoji, label, zh }: { href: string; emoji: string; labe
       style={{ boxShadow: 'var(--shadow-sm)' }}
     >
       <span className="text-base">{emoji}</span>
-      <span className="flex flex-col leading-tight">
-        <span>{label}</span>
-        <span className="text-[10px] font-normal text-[var(--ink-500)]">{zh}</span>
-      </span>
+      <span>{label}</span>
     </a>
   );
 }

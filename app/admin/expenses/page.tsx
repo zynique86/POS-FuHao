@@ -1,6 +1,6 @@
 'use client';
 
-// Daily Expenses (每日支出) — the single place the owner enters all
+// Daily Expenses — the single place the owner enters all
 // non-sales costs for a given business day: staff wages, staff meals,
 // daily purchases, other expenses, rent, utilities.
 //
@@ -13,7 +13,7 @@
 //   *** Purchases are NOT attributed to specific dishes. ***
 //   You record "Today's Purchase = RM 1,250" and the categories
 //   underneath are just for your own paper trail (supplier, meat,
-//   flour, etc.) — the system never splits them into 點心 / 包點 / 飯.
+//   flour, etc.) — the system never splits them by menu category.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -136,7 +136,7 @@ export default function ExpensesPage() {
   const rowsThisTab = rows.filter((r) => r.kind === tab);
 
   async function onDelete(id: number) {
-    if (!confirm('Delete this entry? / 確定刪除嗎?')) return;
+    if (!confirm('Delete this entry?')) return;
     try {
       await deleteExpense(id);
       await load();
@@ -153,12 +153,11 @@ export default function ExpensesPage() {
     <main className="min-h-[calc(100vh-56px)] max-w-[1400px] mx-auto px-4 md:px-8 py-8">
       <AdminPageHeader
         title="Daily Expenses"
-        titleZh="每日支出"
-        sub="Enter today's wages, meals, purchases, and other operating costs / 記錄工資、伙食、採購及其他開支"
+        sub="Enter today's wages, meals, purchases, and other operating costs"
         right={
           <div className="flex items-center gap-2">
             <label className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold">
-              Date · 日期
+              Date
             </label>
             <input
               type="date"
@@ -185,7 +184,7 @@ export default function ExpensesPage() {
         ))}
         <div className="col-span-2 md:col-span-3 lg:col-span-1 rounded-2xl p-4 text-white flex flex-col justify-center"
              style={{ background: 'linear-gradient(135deg, var(--brand-600), var(--brand-800))', boxShadow: 'var(--shadow-brand)' }}>
-          <p className="text-[10px] uppercase tracking-widest opacity-80">Total · 總額</p>
+          <p className="text-[10px] uppercase tracking-widest opacity-80">Total</p>
           <p className="text-2xl font-bold mt-1">{fmt(grand)}</p>
         </div>
       </div>
@@ -197,7 +196,7 @@ export default function ExpensesPage() {
             <h2 className="text-lg font-bold text-[var(--ink-900)] mb-4 flex items-center gap-2">
               <span>{EXPENSE_LABELS[tab].emoji}</span>
               Add {EXPENSE_LABELS[tab].label}
-              <span className="text-[var(--ink-500)] font-normal">· 添加 {EXPENSE_LABELS[tab].label_zh}</span>
+              
             </h2>
             <ExpenseForm
               kind={tab}
@@ -215,7 +214,6 @@ export default function ExpensesPage() {
               <h2 className="text-lg font-bold text-[var(--ink-900)] flex items-center gap-2">
                 <span>{EXPENSE_LABELS[tab].emoji}</span>
                 {EXPENSE_LABELS[tab].label} entries
-                <span className="text-[var(--ink-500)] font-normal">· {EXPENSE_LABELS[tab].label_zh}</span>
               </h2>
               <span className="text-sm text-[var(--ink-500)]">
                 {rowsThisTab.length} entries · {fmt(totals[tab])}
@@ -228,7 +226,7 @@ export default function ExpensesPage() {
               <EmptyState
                 emoji={EXPENSE_LABELS[tab].emoji}
                 title={`No ${EXPENSE_LABELS[tab].label.toLowerCase()} entries yet`}
-                sub={`Use the form to add ${EXPENSE_LABELS[tab].label_zh}.`}
+                sub={`Use the form to add ${EXPENSE_LABELS[tab].label.toLowerCase()}.`}
               />
             ) : (
               <ul className="divide-y divide-[var(--ink-100)]">
@@ -273,7 +271,6 @@ function SummaryTile({
         </p>
       </div>
       <p className="text-lg font-bold text-[var(--ink-900)]">{fmt(amount)}</p>
-      <p className="text-[10px] text-[var(--ink-400)] mt-0.5">{meta.label_zh}</p>
     </button>
   );
 }
@@ -313,7 +310,7 @@ function ExpenseRow({ row, onDelete }: { row: Expense; onDelete: () => void }) {
         )}
         {pm && (
           <p className="text-xs text-[var(--ink-400)] mt-0.5">
-            {pm.emoji} {pm.label} · {pm.label_zh}
+            {pm.emoji} {pm.label}
           </p>
         )}
         {row.receipt_url && (
@@ -323,7 +320,7 @@ function ExpenseRow({ row, onDelete }: { row: Expense; onDelete: () => void }) {
             rel="noreferrer"
             className="text-xs text-[var(--brand-600)] hover:underline mt-0.5 inline-block"
           >
-            📎 Receipt · 收據
+            📎 Receipt
           </a>
         )}
       </div>
@@ -333,7 +330,7 @@ function ExpenseRow({ row, onDelete }: { row: Expense; onDelete: () => void }) {
           onClick={onDelete}
           className="text-xs text-[var(--brand-600)] hover:text-[var(--brand-800)] font-medium"
         >
-          Delete · 刪除
+          Delete
         </button>
       </div>
     </li>
@@ -457,7 +454,7 @@ function ExpenseForm({
       {/* ------- Wages: staff name + hours + parts breakdown ------- */}
       {kind === 'wages' && (
         <>
-          <Field label="Staff name · 員工姓名">
+          <Field label="Staff name">
             <input
               type="text"
               value={staffName}
@@ -468,7 +465,7 @@ function ExpenseForm({
             />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Hours · 工時">
+            <Field label="Hours">
               <input
                 type="number" step="0.25" min={0}
                 value={hours}
@@ -477,7 +474,7 @@ function ExpenseForm({
                 placeholder="8"
               />
             </Field>
-            <Field label="Base wage · 基本工資 (RM)">
+            <Field label="Base wage (RM)">
               <input
                 type="number" step="0.01" min={0}
                 value={normalWage}
@@ -486,7 +483,7 @@ function ExpenseForm({
                 placeholder="80.00"
               />
             </Field>
-            <Field label="OT · 加班 (RM)">
+            <Field label="OT (RM)">
               <input
                 type="number" step="0.01" min={0}
                 value={otAmount}
@@ -495,7 +492,7 @@ function ExpenseForm({
                 placeholder="0"
               />
             </Field>
-            <Field label="Other · 其他 (RM)">
+            <Field label="Other (RM)">
               <input
                 type="number" step="0.01" min={0}
                 value={otherAmount}
@@ -511,7 +508,7 @@ function ExpenseForm({
       {/* ------- Purchase: supplier + description ------- */}
       {kind === 'purchase' && (
         <>
-          <Field label="Supplier · 供應商">
+          <Field label="Supplier">
             <input
               type="text"
               value={supplier}
@@ -520,7 +517,7 @@ function ExpenseForm({
               placeholder="e.g. Market, Uncle Lim, ABC Foods"
             />
           </Field>
-          <Field label="Description · 說明" hint="Optional label — meat, seafood, vegetables, oil, packaging, etc.">
+          <Field label="Description" hint="Optional label — meat, seafood, vegetables, oil, packaging, etc.">
             <input
               type="text"
               value={description}
@@ -534,7 +531,7 @@ function ExpenseForm({
 
       {/* ------- Other / Rent / Utility / Meal: single description ------- */}
       {(kind === 'other' || kind === 'rent' || kind === 'utility' || kind === 'meal') && (
-        <Field label="Description · 說明">
+        <Field label="Description">
           <input
             type="text"
             value={description}
@@ -551,7 +548,7 @@ function ExpenseForm({
       )}
 
       {/* ------- Amount (auto-calculated for wages) ------- */}
-      <Field label="Amount · 金額 (RM)">
+      <Field label="Amount (RM)">
         <input
           type="number" step="0.01" min={0}
           value={amount}
@@ -562,7 +559,7 @@ function ExpenseForm({
         />
       </Field>
 
-      <Field label="Payment method · 付款方式">
+      <Field label="Payment method">
         <select
           value={payMethod}
           onChange={(e) => setPayMethod(e.target.value as PayMethod)}
@@ -570,13 +567,13 @@ function ExpenseForm({
         >
           {(Object.keys(PAY_METHOD_LABELS) as PayMethod[]).map((m) => (
             <option key={m} value={m}>
-              {PAY_METHOD_LABELS[m].emoji} {PAY_METHOD_LABELS[m].label} · {PAY_METHOD_LABELS[m].label_zh}
+              {PAY_METHOD_LABELS[m].emoji} {PAY_METHOD_LABELS[m].label}
             </option>
           ))}
         </select>
       </Field>
 
-      <Field label="Note · 備註" hint="Optional">
+      <Field label="Note" hint="Optional">
         <input
           type="text"
           value={note}
@@ -585,7 +582,7 @@ function ExpenseForm({
         />
       </Field>
 
-      <Field label="Receipt photo · 收據照片" hint="Optional — JPG/PNG/PDF, max 8 MB">
+      <Field label="Receipt photo" hint="Optional — JPG/PNG/PDF, max 8 MB">
         <input
           type="file"
           accept="image/*,application/pdf"
@@ -595,9 +592,9 @@ function ExpenseForm({
       </Field>
 
       <div className="grid grid-cols-2 gap-3 mt-4">
-        <SecondaryBtn onClick={reset}>Clear · 清除</SecondaryBtn>
+        <SecondaryBtn onClick={reset}>Clear</SecondaryBtn>
         <PrimaryBtn type="submit" disabled={busy}>
-          {busy ? 'Saving…' : 'Save · 保存'}
+          {busy ? 'Saving…' : 'Save'}
         </PrimaryBtn>
       </div>
     </form>

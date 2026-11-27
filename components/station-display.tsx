@@ -22,12 +22,10 @@ type OrderWithItems = OrderRow & { items: OrderItem[] };
 export default function StationDisplay({
   station,
   title,
-  titleZh,
   emoji,
 }: {
   station: PrintStation;
   title: string;
-  titleZh: string;
   emoji: string;
 }) {
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
@@ -183,7 +181,7 @@ export default function StationDisplay({
         <header className="flex flex-wrap items-end justify-between gap-4 mb-6">
           <div>
             <p className="text-xs uppercase tracking-[0.2em]" style={{ color: theme.accent }}>
-              {emoji} {title} · {titleZh}
+              {emoji} {title}
             </p>
             <h1 className="text-3xl md:text-4xl font-bold mt-1">
               {station === 'bar' ? 'Now Serving' : 'Now Cooking'}

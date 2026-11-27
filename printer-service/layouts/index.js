@@ -10,5 +10,6 @@ const receipt = require('./receipt');
 const kitchen = require('./kitchen');
 const bar     = require('./bar');
 const restock = require('./restock');
+const test    = require('./test');
 
-module.exports = { format, receipt, kitchen, bar, restock };
+module.exports = { format, receipt, kitchen, bar, restock, test };

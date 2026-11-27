@@ -313,7 +313,7 @@ export default function POSTerminal({
             {/* Category filter */}
             <div className="flex items-center gap-3 min-w-0">
               <span className="hidden md:inline text-[10px] uppercase tracking-widest text-[var(--ink-500)] font-bold shrink-0">
-                Category · 分類
+                Category
               </span>
               <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar flex-1 min-w-0">
                 <FilterChip
@@ -323,7 +323,7 @@ export default function POSTerminal({
                   variant="primary"
                 >
                   <span className="text-base">🍽️</span>
-                  <span>All · 全部</span>
+                  <span>All</span>
                 </FilterChip>
                 {chips.map((c) => {
                   const n = categoryCounts[c.key] ?? 0;
@@ -442,7 +442,7 @@ export default function POSTerminal({
           <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/25 text-xs font-mono">
             {newCount}
           </span>
-          <span>View cart · 查看</span>
+          <span>View cart</span>
           <span className="font-mono">RM {breakdown.total.toFixed(2)}</span>
         </a>
       )}
@@ -463,7 +463,7 @@ function PageHeader({
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]">
-          Waiter · 服務員
+          Waiter
         </p>
         <h1 className="text-3xl md:text-4xl font-bold text-[var(--ink-900)] mt-1">
           Take Order
@@ -867,7 +867,7 @@ function ItemOptionsModal({
       {hasHotCold && (
         <>
           <p className="block text-xs uppercase tracking-widest text-[var(--ink-500)] mb-2 font-semibold">
-            Hot or Cold · 冷热
+            Hot or Cold
           </p>
           <div className="grid grid-cols-2 gap-2 mb-4">
             {([

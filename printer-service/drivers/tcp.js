@@ -292,7 +292,11 @@ function create(config) {
   // contract) and plays them against node-thermal-printer.  All ticket-shape
   // decisions live in the pure layouts; this method is the only place the
   // ESC/POS plumbing (bold, align, feed, cut) touches the hardware.
-  async function printLayout(entries, label = 'ticket') {
+  //
+  // opts.retry = false sends once and throws on the first failure — used by
+  // the printer test so staff get a pass/fail quickly instead of waiting out
+  // a second timeout.
+  async function printLayout(entries, label = 'ticket', opts = {}) {
     const list = Array.isArray(entries) ? entries : [];
     const printer = makePrinter();
     if (!printer) {
@@ -300,7 +304,8 @@ function create(config) {
       return consoleFallback(label, lines);
     }
     for (const e of list) renderEntry(printer, e);
-    await executeWithRetry(printer, label);
+    if (opts.retry === false) await printer.execute();
+    else await executeWithRetry(printer, label);
   }
 
   function renderEntry(printer, e) {

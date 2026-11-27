@@ -1,6 +1,6 @@
 'use client';
 
-// Monthly Business Report (月結報表) — the owner's P&L view for a chosen
+// Monthly Business Report — the owner's P&L view for a chosen
 // month.  Pulls two sources:
 //
 //   Revenue  ← `orders` where paid_at is inside the month and not voided/refunded
@@ -160,12 +160,11 @@ export default function MonthlyReportPage() {
     <main className="min-h-[calc(100vh-56px)] max-w-[1400px] mx-auto px-4 md:px-8 py-8">
       <AdminPageHeader
         title="Monthly Business Report"
-        titleZh="月結報表"
-        sub="Revenue, expenses and estimated operating profit / 收入、支出、預估經營利潤"
+        sub="Revenue, expenses and estimated operating profit"
         right={
           <div className="flex items-center gap-2">
             <label className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold">
-              Month · 月份
+              Month
             </label>
             <input
               type="month"
@@ -191,45 +190,43 @@ export default function MonthlyReportPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* -------- Revenue section -------- */}
           <ContentCard>
-            <SectionHeader emoji="💰" title="Revenue" zh="收入" />
-            <BigNumber label="Total Sales · 總銷售額" value={totalRevenue} accent="brand" />
+            <SectionHeader emoji="💰" title="Revenue" />
+            <BigNumber label="Total Sales" value={totalRevenue} accent="brand" />
 
             <h3 className="mt-6 text-sm uppercase tracking-widest text-[var(--ink-500)] font-semibold">
-              By payment method · 按付款方式
+              By payment method
             </h3>
             <BreakdownList items={Object.entries(payBreakdown).map(([k, v]) => ({
               label: PAY_METHOD_LABELS[k as keyof typeof PAY_METHOD_LABELS]?.label ?? k,
-              labelZh: PAY_METHOD_LABELS[k as keyof typeof PAY_METHOD_LABELS]?.label_zh ?? '',
               emoji: PAY_METHOD_LABELS[k as keyof typeof PAY_METHOD_LABELS]?.emoji ?? '',
               amount: v,
             }))} total={totalRevenue} />
 
             <h3 className="mt-6 text-sm uppercase tracking-widest text-[var(--ink-500)] font-semibold">
-              By category · 按類別
+              By category
             </h3>
             <BreakdownList items={sortByCategoryOrder(Object.entries(categoryBreakdown), categories).map(([name, amount]) => {
               const c = findCategory(categories, name);
-              return { label: c?.name ?? name, labelZh: c?.name_zh ?? '', emoji: c?.emoji ?? '📦', amount };
+              return { label: c?.name ?? name, emoji: c?.emoji ?? '📦', amount };
             }).filter((r) => r.amount > 0)} total={totalRevenue} />
           </ContentCard>
 
           {/* -------- Expenses section -------- */}
           <ContentCard>
-            <SectionHeader emoji="📤" title="Expenses" zh="支出" />
-            <BigNumber label="Total Expenses · 總支出" value={totalExpenses} accent="ink" />
+            <SectionHeader emoji="📤" title="Expenses" />
+            <BigNumber label="Total Expenses" value={totalExpenses} accent="ink" />
 
             <h3 className="mt-6 text-sm uppercase tracking-widest text-[var(--ink-500)] font-semibold">
-              By kind · 按類型
+              By kind
             </h3>
             <BreakdownList items={(Object.keys(EXPENSE_LABELS) as ExpenseKind[]).map((k) => ({
               label: EXPENSE_LABELS[k].label,
-              labelZh: EXPENSE_LABELS[k].label_zh,
               emoji: EXPENSE_LABELS[k].emoji,
               amount: expenseByKind[k],
             })).filter((r) => r.amount > 0)} total={totalExpenses} />
 
             <div className="mt-5 rounded-2xl p-4 bg-[var(--cream-200)] text-[13px] text-[var(--ink-700)]">
-              <b className="text-[var(--brand-700)]">Note · 備註:</b>{' '}
+              <b className="text-[var(--brand-700)]">Note:</b>{' '}
               Food / Material Purchases here is the <b>actual cash spent this month</b> — not the accounting cost-of-goods-sold. The owner tracks cashflow, not inventory value.
             </div>
           </ContentCard>
@@ -244,7 +241,7 @@ export default function MonthlyReportPage() {
                   : 'linear-gradient(135deg, var(--brand-600), var(--brand-800))' }}
               >
                 <p className="text-xs uppercase tracking-widest opacity-80">
-                  Estimated Operating Profit · 預估經營利潤
+                  Estimated Operating Profit
                 </p>
                 <p className="text-4xl md:text-5xl font-bold mt-2">{fmt(profit)}</p>
                 <p className="text-sm opacity-90 mt-1">
@@ -266,12 +263,11 @@ export default function MonthlyReportPage() {
 // Small pieces
 // -------------------------------------------------------------------------
 
-function SectionHeader({ emoji, title, zh }: { emoji: string; title: string; zh: string }) {
+function SectionHeader({ emoji, title }: { emoji: string; title: string }) {
   return (
     <div className="flex items-baseline gap-2 mb-3">
       <span className="text-xl">{emoji}</span>
       <h2 className="text-xl font-bold text-[var(--ink-900)]">{title}</h2>
-      <span className="text-[var(--ink-500)]">· {zh}</span>
     </div>
   );
 }
@@ -296,7 +292,7 @@ function BigNumber({
 function BreakdownList({
   items, total,
 }: {
-  items: { label: string; labelZh: string; emoji: string; amount: number }[];
+  items: { label: string; emoji: string; amount: number }[];
   total: number;
 }) {
   if (items.length === 0) {
@@ -312,7 +308,6 @@ function BreakdownList({
             <span className="text-lg w-6">{it.emoji}</span>
             <span className="flex-1 min-w-0">
               <span className="font-semibold text-sm text-[var(--ink-900)]">{it.label}</span>
-              <span className="ml-2 text-xs text-[var(--ink-500)]">{it.labelZh}</span>
               <div className="mt-1 h-1.5 rounded-full bg-[var(--ink-100)] overflow-hidden">
                 <div
                   className="h-full rounded-full"

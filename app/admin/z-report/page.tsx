@@ -93,7 +93,6 @@ export default function ZReportPage() {
     <main className="min-h-[calc(100vh-56px)] max-w-[1200px] mx-auto px-4 md:px-6 py-6">
       <AdminPageHeader
         title="Z-Report"
-        titleZh="日結"
         right={
           <div className="flex items-center gap-2 no-print">
             <label className="text-xs uppercase tracking-widest text-[var(--ink-500)] font-semibold">

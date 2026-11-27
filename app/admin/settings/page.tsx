@@ -94,7 +94,7 @@ export default function AdminSettingsPage() {
 
   return (
     <main className="min-h-[calc(100vh-56px)] max-w-[1200px] mx-auto px-4 md:px-6 py-6">
-      <AdminPageHeader title="Settings" titleZh="設定" />
+      <AdminPageHeader title="Settings" />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <section className="bg-white rounded-3xl p-6 border border-[var(--ink-200)]" style={{ boxShadow: 'var(--shadow-sm)' }}>
@@ -108,7 +108,7 @@ export default function AdminSettingsPage() {
             />
           </Field>
 
-          <Field label="Shop name (中文)">
+          <Field label="Shop name (Chinese)">
             <input
               value={draft.shop_name_zh}
               onChange={(e) => setDraft({ ...draft, shop_name_zh: e.target.value })}

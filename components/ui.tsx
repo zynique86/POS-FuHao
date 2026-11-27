@@ -8,17 +8,15 @@ import { useEffect } from 'react';
 // ─── page header ──────────────────────────────────────────────────────────
 
 // Admin subpage header — same look but with a "← Dashboard" back link
-// in place of the role label. Title is bilingual by convention.
+// in place of the role label. Title is English only.
 export function AdminPageHeader({
   title,
-  titleZh,
   sub,
   right,
   backHref = '/admin',
   backLabel = '← Dashboard',
 }: {
   title: string;
-  titleZh?: string;
   sub?: string;
   right?: React.ReactNode;
   backHref?: string;
@@ -35,9 +33,6 @@ export function AdminPageHeader({
         </a>
         <h1 className="text-3xl md:text-4xl font-bold text-[var(--ink-900)] mt-2">
           {title}
-          {titleZh && (
-            <span className="text-[var(--ink-500)] font-normal ml-2">· {titleZh}</span>
-          )}
         </h1>
         {sub && <p className="text-sm text-[var(--ink-500)] mt-1">{sub}</p>}
       </div>
