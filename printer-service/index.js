@@ -250,6 +250,7 @@ async function markAttempted(job) {
 }
 
 async function processJob(job) {
+  if (job.kind === 'test') return processTestJob(job);
   if (inFlight.has(job.id)) return;
   inFlight.add(job.id);
   try {
@@ -276,6 +277,73 @@ async function processJob(job) {
       attempts.delete(job.id);
       await markAttempted(job);
     }
+  } finally {
+    inFlight.delete(job.id);
+  }
+}
+
+// --- printer test ----------------------------------------------------------
+// Staff press "Test printers" in the POS, which inserts one `test` job per
+// station. Each is tried exactly once (no retry, no requeue) and the outcome
+// is written back into payload.result so the POS can show pass/fail per
+// printer. A test job older than TEST_MAX_AGE_MS (e.g. queued while this
+// service was off) is closed without printing so a stale test slip never
+// pops out hours later.
+const TEST_MAX_AGE_MS = 2 * 60 * 1000;
+
+// Turn a raw socket error into something a cashier can act on.
+function describePrinterError(err) {
+  const msg = (err && err.message) ? String(err.message) : String(err || 'unknown error');
+  if (msg.includes('ECONNREFUSED')) {
+    return 'Printer refused the connection. It is on the network but not accepting print jobs on port 9100: restart the printer and check its IP.';
+  }
+  if (msg.includes('EHOSTUNREACH') || msg.includes('ENETUNREACH')) {
+    return 'Printer not found on the network. Check it is powered on, the cable/Wi-Fi is connected, and the IP is right.';
+  }
+  if (msg.includes('ETIMEDOUT') || msg.includes('Socket timeout')) {
+    return 'Printer did not answer in time. Check it is powered on, connected to the router, and the IP is right.';
+  }
+  return msg;
+}
+
+async function processTestJob(job) {
+  if (inFlight.has(job.id)) return;
+  inFlight.add(job.id);
+  const station = job.station || 'kitchen';
+  const ip = STATION_IPS[station] || null;
+  let result;
+  try {
+    const age = Date.now() - new Date(job.created_at || Date.now()).getTime();
+    if (age > TEST_MAX_AGE_MS) {
+      result = { ok: false, expired: true, error: 'Test expired before the printer service picked it up.' };
+    } else if (!ip) {
+      result = { ok: false, error: `No printer IP set for ${station.toUpperCase()} in the printer service .env (${station.toUpperCase()}_PRINTER_IP).` };
+    } else {
+      const entries = layouts.test.build({
+        stationLabel: STATION_LABELS[station] || station.toUpperCase(),
+        ip,
+        by: job.payload?.by,
+        tz: BUSINESS_TZ,
+        now: new Date(),
+      });
+      await driverFor(station).printLayout(entries, `${station} test`, { retry: false });
+      result = { ok: true };
+      console.log(`🧪 Test slip printed at ${station} (${ip})`);
+    }
+  } catch (err) {
+    result = { ok: false, error: describePrinterError(err), raw: (err && err.message) || String(err) };
+    console.error(`🧪 Test FAILED at ${station} (${ip}):`, result.raw);
+  }
+  try {
+    await supabase
+      .from('print_jobs')
+      .update({
+        printed_at: new Date().toISOString(),
+        payload: { ...(job.payload || {}), result: { ...result, ip, at: new Date().toISOString() } },
+      })
+      .eq('id', job.id);
+  } catch (e) {
+    console.error('could not record test result:', e.message);
   } finally {
     inFlight.delete(job.id);
   }
@@ -583,6 +651,8 @@ module.exports = {
   handleVoid,
   handleRefund,
   handleRestock,
+  processTestJob,
+  describePrinterError,
   stationForCategory: (category) => {
     // Mirror of lib/types.ts: category → one of three printer stations.
     //   kitchen = back kitchen, cashier = front kitchen, bar = bar.

@@ -24,6 +24,7 @@ import { useSettings } from '@/lib/use-settings';
 import { roundToNearest5Sen } from '@/lib/pricing';
 import { buildDuitNowPayload } from '@/lib/duitnow';
 import { QRCodeSVG } from 'qrcode.react';
+import { PrinterTestButton } from '@/components/printer-test';
 import {
   applyRowEvent,
   applyRowEventBuckets,
@@ -240,6 +241,7 @@ export default function CashierPage() {
           </h1>
         </div>
         <div className="flex items-center gap-4 text-sm">
+          <PrinterTestButton />
           <StatChip label="Unpaid" value={orders.length} accent />
           <StatChip label="Paid today" value={paidToday.length} />
         </div>

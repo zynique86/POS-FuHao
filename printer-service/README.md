@@ -44,6 +44,21 @@ node index.js
 
 Keep it supervised (systemd, pm2, etc.) so it restarts after power cuts.
 
+## Testing the printers
+
+The cashier screen has a **Test printers** button. It queues one `test` print
+job per station (cashier/front kitchen, back kitchen, bar); this service sends
+a short test slip to that printer once, with no retry, and writes the outcome
+back to the job so the button can show Working or Failed with the reason
+(refused connection, no answer, no IP set in `.env`). If the service itself is
+not running, the button reports "No reply from the printer service" after 30
+seconds. Test jobs older than 2 minutes are closed without printing.
+
+"Working" means the printer accepted the data over the network. Network
+printers don't report paper-out back, so check the slip actually came out.
+
+Preview the slip with `node printer-service/bin/preview.js test`.
+
 ## Previewing layouts
 
 The customer receipt, kitchen ticket, and bar ticket layouts live in
