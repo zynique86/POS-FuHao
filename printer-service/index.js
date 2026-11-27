@@ -233,11 +233,16 @@ function itemView(i) {
 // A job that fails because the printer is unreachable stays pending (printed_at
 // stays null) and is retried by the periodic catch-up below, so a ticket is not
 // silently lost when a printer is off or the network blips. After MAX_ATTEMPTS
-// it is given up on and marked attempted, so one dead printer or a bad job
-// never blocks the queue forever. Attempt counts are in memory only: a service
+// quick retries the job is NOT marked printed (that would hide a ticket the
+// kitchen never received); it just backs off and is retried every
+// COOLDOWN_MS until the printer comes back. Only a job that fails for a
+// non-network reason (bad data, unknown kind) is marked attempted, so one bad
+// job never blocks the queue. Attempt counts are in memory only: a service
 // restart gives every pending job a fresh set of attempts.
 const MAX_ATTEMPTS = 5;
+const COOLDOWN_MS = 5 * 60 * 1000;
 const attempts = new Map();   // job id -> failed attempts so far
+const cooldownUntil = new Map(); // job id -> epoch ms before which catch-up skips it
 const inFlight = new Set();   // job ids being processed right now
 
 async function markAttempted(job) {
@@ -263,6 +268,7 @@ async function processJob(job) {
     else console.warn('Unknown job kind:', job.kind);
 
     attempts.delete(job.id);
+    cooldownUntil.delete(job.id);
     await supabase
       .from('print_jobs')
       .update({ printed_at: new Date().toISOString() })
@@ -270,10 +276,18 @@ async function processJob(job) {
   } catch (err) {
     const n = (attempts.get(job.id) || 0) + 1;
     console.error(`❌ Job ${job.id} (${job.kind}/${job.station}) failed (attempt ${n}/${MAX_ATTEMPTS}):`, err.message);
-    if (isPrinterNetError(err) && n < MAX_ATTEMPTS) {
-      attempts.set(job.id, n);   // printer unreachable — leave pending, retry later
+    if (isPrinterNetError(err)) {
+      // Printer unreachable — never mark the job printed; keep it pending.
+      if (n >= MAX_ATTEMPTS) {
+        attempts.set(job.id, 0);
+        cooldownUntil.set(job.id, Date.now() + COOLDOWN_MS);
+        console.error(`🛑 Job ${job.id} NOT printed — ${job.station} printer unreachable. Will keep retrying every ${COOLDOWN_MS / 60000} min; fix the printer and it will print.`);
+      } else {
+        attempts.set(job.id, n);
+      }
     } else {
       attempts.delete(job.id);
+      cooldownUntil.delete(job.id);
       await markAttempted(job);
     }
   } finally {
@@ -488,8 +502,11 @@ async function catchUp() {
     .is('printed_at', null)
     .order('created_at');
   if (!pending || pending.length === 0) return;
-  console.log(`⏳ Catching up ${pending.length} pending print job(s)…`);
-  for (const job of pending) await processJob(job);
+  const now = Date.now();
+  const due = pending.filter((j) => (cooldownUntil.get(j.id) || 0) <= now);
+  if (due.length === 0) return;
+  console.log(`⏳ Catching up ${due.length} pending print job(s)…`);
+  for (const job of due) await processJob(job);
 }
 
 // Guarded catch-up, used at boot, on every Realtime (re)connect and by the
