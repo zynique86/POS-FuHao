@@ -30,7 +30,7 @@ export default function OrderLogsPage() {
   }, []);
 
   return (
-    <main className="min-h-[calc(100vh-56px)] w-full px-3 sm:px-4 md:px-6 xl:px-8 py-6 md:py-8">
+    <main className="min-h-[calc(100vh-56px)] max-w-[1400px] mx-auto px-4 md:px-8 py-8">
       <AdminPageHeader
         title="Order Log"
         sub="Every order removal and table change, with who did it and why."
@@ -41,7 +41,7 @@ export default function OrderLogsPage() {
       ) : logs.length === 0 ? (
         <EmptyState emoji="📝" title="No actions yet" sub="Removals and table changes will show up here." />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-2 md:gap-3 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 md:gap-3 items-start">
           {logs.map((l) => (
             <LogRow key={l.id} log={l} />
           ))}
