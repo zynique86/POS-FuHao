@@ -4,7 +4,7 @@
 // Fetches on mount, then re-fetches whenever orders / order_items /
 // payments change via Supabase Realtime so numbers pulse in real time.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   applyRowEvent,
@@ -53,6 +53,17 @@ export default function Dashboard() {
   const [items, setItems] = useState<ItemRow[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [openOrders, setOpenOrders] = useState<OrderRow[]>([]);
+  // Realtime handlers are registered once on mount; read the latest order
+  // buckets from this ref, never from the (stale) closure.
+  const bucketsRef = useRef<{ today: OrderRow[]; yest: OrderRow[]; open: OrderRow[] }>({
+    today: [], yest: [], open: [],
+  });
+  function setOrderBuckets(today: OrderRow[], yest: OrderRow[], open: OrderRow[]) {
+    bucketsRef.current = { today, yest, open };
+    setTodayOrders(today);
+    setYestOrders(yest);
+    setOpenOrders(open);
+  }
   const [loading, setLoading] = useState(true);
   const [pulse, setPulse] = useState(0);
 
@@ -78,11 +89,13 @@ export default function Dashboard() {
       supabase.from('orders').select('*').is('paid_at', null).neq('status', 'void'),
     ]);
 
-    setTodayOrders((todayRes.data ?? []) as OrderRow[]);
-    setYestOrders((yestRes.data ?? []) as OrderRow[]);
+    setOrderBuckets(
+      (todayRes.data ?? []) as OrderRow[],
+      (yestRes.data ?? []) as OrderRow[],
+      (openRes.data ?? []) as OrderRow[],
+    );
     setItems((itemsRes.data ?? []) as ItemRow[]);
     setPayments((paysRes.data ?? []) as PaymentRow[]);
-    setOpenOrders((openRes.data ?? []) as OrderRow[]);
     setLoading(false);
     setPulse((p) => p + 1);
   }
@@ -102,7 +115,7 @@ export default function Dashboard() {
     const isOpen = (o: OrderRow) => o.paid_at == null && o.status !== 'void';
 
     const res = applyRowEventBuckets(
-      { today: todayOrders, yest: yestOrders, open: openOrders },
+      bucketsRef.current,
       payload,
       { today: isToday, yest: isYest, open: isOpen },
     );
@@ -111,9 +124,7 @@ export default function Dashboard() {
       loadAll();
       return;
     }
-    setTodayOrders(res.state.today);
-    setYestOrders(res.state.yest);
-    setOpenOrders(res.state.open);
+    setOrderBuckets(res.state.today, res.state.yest, res.state.open);
     setPulse((p) => p + 1);
   }
 

@@ -2,7 +2,7 @@
 
 // Cashier — redesigned. Voids, reprints, split bills, payment flows.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   fetchOpenShift,
@@ -71,6 +71,18 @@ export default function CashierPage() {
   const [screen, setScreen] = useState<Screen>({ kind: 'closed' });
   const [shift, setShift] = useState<Shift | null>(null);
 
+  // The Realtime handlers below are registered once on mount, so they must
+  // not read openOrders/paidOrders from their closure — that would be the
+  // empty mount-time snapshot, and a payment flipping an order to paid
+  // would wipe the whole unpaid list until a manual refresh. Keep the latest
+  // buckets in a ref and always go through setOrderBuckets().
+  const bucketsRef = useRef<{ open: BaseOrder[]; paid: BaseOrder[] }>({ open: [], paid: [] });
+  function setOrderBuckets(open: BaseOrder[], paid: BaseOrder[]) {
+    bucketsRef.current = { open, paid };
+    setOpenOrders(open);
+    setPaidOrders(paid);
+  }
+
   async function refreshShift() {
     setShift(await fetchOpenShift(todayISODate()));
   }
@@ -105,8 +117,7 @@ export default function CashierPage() {
         : Promise.resolve({ data: [] as Payment[] }),
     ]);
 
-    setOpenOrders(openRows);
-    setPaidOrders(paidRows);
+    setOrderBuckets(openRows, paidRows);
     setItems((itemRes.data ?? []) as OrderItem[]);
     setPayments((payRes.data ?? []) as Payment[]);
     setLoading(false);
@@ -125,7 +136,7 @@ export default function CashierPage() {
 
   function handleOrderEvent(payload: RealtimePayload<BaseOrder>) {
     const res = applyRowEventBuckets(
-      { open: openOrders, paid: paidOrders },
+      bucketsRef.current,
       payload,
       { open: isUnpaid, paid: isPaidToday },
     );
@@ -134,8 +145,7 @@ export default function CashierPage() {
       loadAll();
       return;
     }
-    setOpenOrders(res.state.open);
-    setPaidOrders(res.state.paid);
+    setOrderBuckets(res.state.open, res.state.paid);
   }
 
   function handleItemEvent(payload: RealtimePayload<OrderItem>) {
@@ -349,7 +359,13 @@ export default function CashierPage() {
           amount={screen.amount}
           label={screen.label}
           onCancel={() => setScreen({ kind: 'menu', orderId: activeOrder.id })}
-          onDone={() => setScreen({ kind: 'closed' })}
+          onDone={async () => {
+            // Back to the order list with fresh data straight away, rather
+            // than waiting on Realtime, so the remaining unpaid orders (and a
+            // split bill's outstanding balance) show without a manual refresh.
+            setScreen({ kind: 'closed' });
+            await loadAll();
+          }}
         />
       )}
 
