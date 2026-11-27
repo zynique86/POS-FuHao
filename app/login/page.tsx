@@ -24,14 +24,14 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [shop, setShop] = useState<{ name: string; nameZh: string }>({
     name: 'Dim Sum POS',
-    nameZh: '點心 · Staff sign-in',
+    nameZh: 'Staff sign-in',
   });
 
   useEffect(() => {
     fetchSettings().then((s) => {
       setShop({
         name: s.shop_name || 'Dim Sum POS',
-        nameZh: (s.shop_name_zh || '點心') + ' · Staff sign-in',
+        nameZh: (s.shop_name_zh ? s.shop_name_zh + ' · ' : '') + 'Staff sign-in',
       });
     });
   }, []);

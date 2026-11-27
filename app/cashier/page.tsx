@@ -243,7 +243,7 @@ export default function CashierPage() {
       <header className="flex flex-wrap items-end justify-between gap-3 mb-6">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-[var(--ink-500)]">
-            Cashier · 收銀
+            Cashier
           </p>
           <h1 className="text-3xl md:text-4xl font-bold text-[var(--ink-900)] mt-1">
             Take Payment

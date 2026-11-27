@@ -10,7 +10,6 @@ export default function KitchenPage() {
     <StationDisplay
       station="kitchen"
       title="Back Kitchen"
-      titleZh="後廚"
       emoji="👨‍🍳"
     />
   );

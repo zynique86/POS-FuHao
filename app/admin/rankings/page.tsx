@@ -1,6 +1,6 @@
 'use client';
 
-// Food & Category Rankings (銷售排行) — answers "what sells the most?"
+// Food & Category Rankings — answers "what sells the most?"
 //
 // Two rankings side by side:
 //   1. Top-selling food items      (Rank / Name / Qty / Sales)
@@ -135,8 +135,7 @@ export default function RankingsPage() {
     <main className="min-h-[calc(100vh-56px)] max-w-[1400px] mx-auto px-4 md:px-8 py-8">
       <AdminPageHeader
         title="Sales Rankings"
-        titleZh="銷售排行"
-        sub="Which foods and categories sell the most / 最暢銷的食品與分類"
+        sub="Which foods and categories sell the most"
         right={
           <div className="flex flex-wrap items-center gap-2">
             {(['today','week','month','custom'] as RangeKey[]).map((k) => (
@@ -181,7 +180,7 @@ export default function RankingsPage() {
             <ContentCard>
               <div className="flex items-baseline justify-between mb-4">
                 <h2 className="text-xl font-bold text-[var(--ink-900)]">
-                  🏆 Top Selling Food <span className="text-[var(--ink-500)] font-normal">· 最暢銷食品</span>
+                  🏆 Top Selling Food
                 </h2>
                 <span className="text-sm text-[var(--ink-500)]">Total {fmt(totalSales)}</span>
               </div>
@@ -190,9 +189,9 @@ export default function RankingsPage() {
                   <thead>
                     <tr className="text-left text-[10px] uppercase tracking-widest text-[var(--ink-500)] border-b border-[var(--ink-200)]">
                       <th className="py-2 pr-2 w-10">#</th>
-                      <th className="py-2 pr-2">Food · 食品</th>
-                      <th className="py-2 pr-2 text-right">Qty · 數量</th>
-                      <th className="py-2 text-right">Sales · 銷售額</th>
+                      <th className="py-2 pr-2">Food</th>
+                      <th className="py-2 pr-2 text-right">Qty</th>
+                      <th className="py-2 text-right">Sales</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -220,7 +219,7 @@ export default function RankingsPage() {
           <div>
             <ContentCard>
               <h2 className="text-xl font-bold text-[var(--ink-900)] mb-4">
-                📊 Category <span className="text-[var(--ink-500)] font-normal">· 分類</span>
+                📊 Category
               </h2>
               <ul className="space-y-3">
                 {catRanking.map((c, i) => {
@@ -249,7 +248,7 @@ export default function RankingsPage() {
                         </span>
                       </div>
                       <p className="text-[10px] text-[var(--ink-500)] mt-0.5">
-                        {meta.label_zh} · {c.qty} items
+                        {c.qty} items
                       </p>
                     </li>
                   );
