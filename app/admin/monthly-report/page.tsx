@@ -19,7 +19,8 @@ import {
   EmptyState,
 } from '@/components/ui';
 import type { Expense, Order, OrderItem, ExpenseKind } from '@/lib/types';
-import { EXPENSE_LABELS, MENU_CATEGORIES, PAY_METHOD_LABELS } from '@/lib/types';
+import { EXPENSE_LABELS, PAY_METHOD_LABELS } from '@/lib/types';
+import { findCategory, sortByCategoryOrder, useMenuCategories } from '@/lib/categories';
 import { businessDateStartISO } from '@/lib/datetime';
 
 // -------------------------------------------------------------------------
@@ -127,6 +128,7 @@ export default function MonthlyReportPage() {
   }, [orders]);
 
   const menuMap = useMenuMap();
+  const categories = useMenuCategories();
 
   const categoryBreakdown = useMemo(() => {
     const out: Record<string, number> = {};
@@ -205,10 +207,10 @@ export default function MonthlyReportPage() {
             <h3 className="mt-6 text-sm uppercase tracking-widest text-[var(--ink-500)] font-semibold">
               By category · 按類別
             </h3>
-            <BreakdownList items={MENU_CATEGORIES.map((c) => ({
-              label: c.label, labelZh: c.label_zh, emoji: c.emoji,
-              amount: categoryBreakdown[c.key] ?? 0,
-            })).filter((r) => r.amount > 0)} total={totalRevenue} />
+            <BreakdownList items={sortByCategoryOrder(Object.entries(categoryBreakdown), categories).map(([name, amount]) => {
+              const c = findCategory(categories, name);
+              return { label: c?.name ?? name, labelZh: c?.name_zh ?? '', emoji: c?.emoji ?? '📦', amount };
+            }).filter((r) => r.amount > 0)} total={totalRevenue} />
           </ContentCard>
 
           {/* -------- Expenses section -------- */}

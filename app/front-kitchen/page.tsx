@@ -3,7 +3,7 @@
 // Front Kitchen display — thin wrapper around StationDisplay, showing the
 // front-counter items: dim sum, buns, roasted meats, etc. Mirrors
 // app/kitchen/page.tsx (Back Kitchen), which filters to 'kitchen' station
-// items. This filters to 'cashier' station items (see CATEGORY_STATION in
+// items. This filters to 'cashier' station items (see lib/categories.ts and
 // lib/types.ts — the station key stays 'cashier' because it maps to the
 // front-counter printer, but on screen it's labelled "Front Kitchen").
 

@@ -584,7 +584,9 @@ module.exports = {
   handleRefund,
   handleRestock,
   stationForCategory: (category) => {
-    // Mirror of lib/types.ts: category → one of three printer stations.
+    // Built-in fallback only (used by tests). Live routing is the
+    // category_station_routing table, which send_order() reads and admins
+    // edit in Admin > Menu > Categories & printers.
     //   kitchen = back kitchen, cashier = front kitchen, bar = bar.
     const map = {
       'noodles': 'kitchen', 'noodles / fried': 'kitchen', 'fried': 'kitchen', 'rice': 'kitchen',

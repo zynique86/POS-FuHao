@@ -5,10 +5,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { AdminPageHeader, PrimaryBtn, SecondaryBtn, ErrorBanner, EmptyState } from '@/components/ui';
-import { MENU_CATEGORIES, stationForCategory, type ItemModifier, type MenuItem, type PrintStation } from '@/lib/types';
+import { stationForCategory, type ItemModifier, type MenuItem, type PrintStation } from '@/lib/types';
+import {
+  findCategory,
+  loadCategories,
+  sortByCategoryOrder,
+  useMenuCategories,
+  type MenuCategory,
+} from '@/lib/categories';
 
 // Display metadata for the printer each category routes to.  Routing itself
-// lives in stationForCategory(); this is only for the admin badges/editor.
+// comes from the category list (Categories & printers); this is only for the
+// admin badges/editor.
 const STATION_META: Record<PrintStation, { label: string; emoji: string; bg: string; fg: string }> = {
   kitchen: { label: 'Back Kitchen 後廚',  emoji: '👨‍🍳', bg: 'var(--brand-50)',      fg: 'var(--brand-700)' },
   cashier: { label: 'Front Kitchen 前廚', emoji: '🧾',   bg: 'var(--gold-400)/15',   fg: 'var(--gold-600)' },
@@ -47,6 +55,8 @@ export default function AdminMenuPage() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [showCategories, setShowCategories] = useState(false);
+  const categories = useMenuCategories();
 
   async function uploadImageFile(file: File): Promise<string> {
     const ext = (file.name.split('.').pop() ?? 'jpg').toLowerCase();
@@ -102,21 +112,13 @@ export default function AdminMenuPage() {
       if (!m.has(c)) m.set(c, []);
       m.get(c)!.push(i);
     }
-    // Sort in the seven-category order defined in lib/types, with any
-    // unrecognised categories appended at the end alphabetically.
-    const order = MENU_CATEGORIES.map((c) => c.key);
-    return [...m.entries()].sort(([a], [b]) => {
-      const ia = order.indexOf(a);
-      const ib = order.indexOf(b);
-      if (ia !== -1 && ib !== -1) return ia - ib;
-      if (ia !== -1) return -1;
-      if (ib !== -1) return 1;
-      return a.localeCompare(b);
-    });
-  }, [items]);
+    // Sort in the admin-defined category order, with any unrecognised
+    // categories appended at the end alphabetically.
+    return sortByCategoryOrder([...m.entries()], categories);
+  }, [items, categories]);
 
   function startAdd() {
-    setDraft({ ...EMPTY });
+    setDraft({ ...EMPTY, category: categories[0]?.name ?? EMPTY.category });
     setErr(null);
   }
   function startEdit(item: MenuItem) {
@@ -192,6 +194,13 @@ export default function AdminMenuPage() {
         title="Menu"
         titleZh="菜單"
         right={
+          <div className="flex gap-2">
+          <button
+            onClick={() => setShowCategories(true)}
+            className="font-bold px-5 py-3 rounded-2xl bg-[var(--cream-100)] hover:bg-[var(--cream-200)] text-[var(--ink-800)] border border-[var(--ink-200)] transition"
+          >
+            🗂️ Categories &amp; printers
+          </button>
           <button
             onClick={startAdd}
             className="text-white font-bold px-5 py-3 rounded-2xl transition"
@@ -202,6 +211,7 @@ export default function AdminMenuPage() {
           >
             + Add item
           </button>
+          </div>
         }
       />
 
@@ -228,14 +238,16 @@ export default function AdminMenuPage() {
               >
                 <h2 className="text-sm font-bold text-[var(--ink-800)] uppercase tracking-widest flex items-center gap-2">
                   {(() => {
-                    const meta = MENU_CATEGORIES.find((c) => c.key === category);
+                    const meta = findCategory(categories, category);
                     return meta ? (
                       <>
-                        <span className="text-lg">{meta.emoji}</span>
-                        <span>{meta.label}</span>
-                        <span className="text-[var(--ink-500)] font-normal normal-case tracking-normal">
-                          · {meta.label_zh}
-                        </span>
+                        {meta.emoji && <span className="text-lg">{meta.emoji}</span>}
+                        <span>{meta.name}</span>
+                        {meta.name_zh && (
+                          <span className="text-[var(--ink-500)] font-normal normal-case tracking-normal">
+                            · {meta.name_zh}
+                          </span>
+                        )}
                       </>
                     ) : (
                       <span>{category}</span>
@@ -322,6 +334,18 @@ export default function AdminMenuPage() {
             </section>
           ))}
         </div>
+      )}
+
+      {showCategories && (
+        <CategoryManager
+          categories={categories}
+          items={items}
+          onClose={() => setShowCategories(false)}
+          onChanged={async () => {
+            await loadCategories(true);
+            await load();
+          }}
+        />
       )}
 
       {draft && (
@@ -450,11 +474,17 @@ export default function AdminMenuPage() {
                 onChange={(e) => setDraft({ ...draft, category: e.target.value })}
                 className="w-full px-4 py-3 border border-[var(--ink-200)] rounded-xl bg-white focus:border-[var(--brand-500)] focus:outline-none focus:ring-4 focus:ring-[var(--brand-100)]"
               >
-                {MENU_CATEGORIES.map((c) => (
-                  <option key={c.key} value={c.key}>
-                    {c.emoji}  {c.label} · {c.label_zh}
+                {categories.map((c) => (
+                  <option key={c.key} value={c.name}>
+                    {c.emoji ? `${c.emoji}  ` : ''}{c.name}{c.name_zh ? ` · ${c.name_zh}` : ''}
                   </option>
                 ))}
+                {/* Keep an item's current category selectable even if it
+                    isn't in the list (e.g. typed in before categories
+                    were editable). */}
+                {draft.category && !findCategory(categories, draft.category) && (
+                  <option value={draft.category}>{draft.category}</option>
+                )}
               </select>
             </Field>
 
@@ -473,8 +503,8 @@ export default function AdminMenuPage() {
                 );
               })()}
               <span className="text-xs text-[var(--ink-400)]">
-                Noodles, Fried &amp; Rice → Back Kitchen · Drinks → Bar ·
-                everything else (dim sum, buns, roasted…) → Front Kitchen.
+                Each category has its own printer. To change it, use
+                &ldquo;Categories &amp; printers&rdquo; at the top of this page.
               </span>
             </Field>
 
@@ -633,3 +663,300 @@ function ModifierAdder({ onAdd }: { onAdd: (m: ItemModifier) => void }) {
   );
 }
 
+
+// ---------------------------------------------------------------------------
+// Categories & printers — admins add / rename / reorder / delete categories
+// and choose which printer each one's kitchen tickets go to.  Saved through
+// the save_menu_category / delete_menu_category RPCs
+// (migrations/editable_categories.sql), which are admin-only in the DB.
+// ---------------------------------------------------------------------------
+
+const PRINTER_CHOICES: { value: PrintStation; label: string }[] = [
+  { value: 'cashier', label: '🧾 Front Kitchen printer' },
+  { value: 'kitchen', label: '👨‍🍳 Back Kitchen printer' },
+  { value: 'bar',     label: '🫖 Bar printer' },
+];
+
+type CatRow = {
+  rowId: string;
+  origKey: string | null;   // null = new, not saved yet
+  name: string;
+  name_zh: string;
+  emoji: string;
+  station: PrintStation;
+  position: number;
+};
+
+function toRow(c: MenuCategory): CatRow {
+  return {
+    rowId: c.key,
+    origKey: c.key,
+    name: c.name,
+    name_zh: c.name_zh ?? '',
+    emoji: c.emoji ?? '',
+    station: c.station,
+    position: c.position,
+  };
+}
+
+function rowChanged(r: CatRow, list: MenuCategory[]) {
+  if (!r.origKey) return true;
+  const c = list.find((x) => x.key === r.origKey);
+  if (!c) return true;
+  return (
+    c.name !== r.name.trim() ||
+    (c.name_zh ?? '') !== r.name_zh.trim() ||
+    (c.emoji ?? '') !== r.emoji.trim() ||
+    c.station !== r.station ||
+    c.position !== r.position
+  );
+}
+
+function CategoryManager({
+  categories,
+  items,
+  onClose,
+  onChanged,
+}: {
+  categories: MenuCategory[];
+  items: MenuItem[];
+  onClose: () => void;
+  onChanged: () => Promise<void>;
+}) {
+  const [rows, setRows] = useState<CatRow[]>(() => categories.map(toRow));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
+
+  // Re-sync when the saved list changes (after a save, or another admin).
+  useEffect(() => {
+    setRows((prev) => {
+      const unsaved = prev.filter((r) => !r.origKey);
+      return [...categories.map(toRow), ...unsaved];
+    });
+  }, [categories]);
+
+  const itemCount = (key: string | null) =>
+    key ? items.filter((i) => (i.category || '').trim().toLowerCase() === key).length : 0;
+
+  function patch(rowId: string, p: Partial<CatRow>) {
+    setRows((rs) => rs.map((r) => (r.rowId === rowId ? { ...r, ...p } : r)));
+    setOkMsg(null);
+  }
+
+  function addRow() {
+    const maxPos = rows.reduce((m, r) => Math.max(m, r.position), 0);
+    setRows((rs) => [
+      ...rs,
+      {
+        rowId: `new-${Date.now()}`,
+        origKey: null,
+        name: '',
+        name_zh: '',
+        emoji: '',
+        station: 'cashier',
+        position: maxPos + 10,
+      },
+    ]);
+    setOkMsg(null);
+  }
+
+  // Move a row up/down by renumbering every row's position 10, 20, 30…
+  function move(idx: number, dir: -1 | 1) {
+    const j = idx + dir;
+    if (j < 0 || j >= rows.length) return;
+    const next = [...rows];
+    [next[idx], next[j]] = [next[j], next[idx]];
+    setRows(next.map((r, i) => ({ ...r, position: (i + 1) * 10 })));
+    setOkMsg(null);
+  }
+
+  const dirty = rows.filter((r) => rowChanged(r, categories));
+
+  async function saveAll() {
+    setErr(null);
+    setOkMsg(null);
+    for (const r of dirty) {
+      if (!r.name.trim()) return setErr('Every category needs a name.');
+    }
+    const names = rows.map((r) => r.name.trim().toLowerCase());
+    if (new Set(names).size !== names.length) {
+      return setErr('Two categories have the same name.');
+    }
+    setBusy(true);
+    // Saved one by one; on an error, the ones before it are already saved
+    // and the rest stay on screen so nothing is lost.
+    for (const r of dirty) {
+      const { error } = await supabase.rpc('save_menu_category', {
+        p_old_key: r.origKey,
+        p_name: r.name.trim(),
+        p_name_zh: r.name_zh.trim(),
+        p_emoji: r.emoji.trim(),
+        p_station: r.station,
+        p_position: r.position,
+      });
+      if (error) {
+        setBusy(false);
+        await onChanged();
+        return setErr(`Could not save "${r.name.trim()}": ${error.message}`);
+      }
+    }
+    // New rows are now saved; drop the local copies (the reload brings
+    // them back as saved rows).
+    setRows((rs) => rs.filter((r) => r.origKey));
+    await onChanged();
+    setBusy(false);
+    setOkMsg('Saved. New orders print to the printers shown here.');
+  }
+
+  async function remove(r: CatRow) {
+    setErr(null);
+    setOkMsg(null);
+    if (!r.origKey) {
+      setRows((rs) => rs.filter((x) => x.rowId !== r.rowId));
+      return;
+    }
+    const n = itemCount(r.origKey);
+    if (n > 0) {
+      return setErr(`"${r.name}" still has ${n} menu item(s). Move them to another category first.`);
+    }
+    if (!confirm(`Delete the category "${r.name}"?`)) return;
+    setBusy(true);
+    const { error } = await supabase.rpc('delete_menu_category', { p_key: r.origKey });
+    if (error) setErr(error.message);
+    await onChanged();
+    setBusy(false);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-[var(--ink-900)]/50 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+    >
+      <div
+        className="bg-white rounded-3xl max-w-3xl w-full flex flex-col max-h-[95vh] animate-rise overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+        style={{ boxShadow: 'var(--shadow-lg)' }}
+      >
+        <div className="shrink-0 px-6 pt-6 pb-3 border-b border-[var(--ink-100)]">
+          <h2 className="text-xl font-bold text-[var(--ink-900)]">Categories &amp; printers</h2>
+          <p className="text-sm text-[var(--ink-500)] mt-1">
+            Add your own categories and choose which printer their kitchen tickets print at.
+            Arrows change the order on the POS.
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+          {rows.map((r, idx) => {
+            const n = itemCount(r.origKey);
+            const changed = rowChanged(r, categories);
+            return (
+              <div
+                key={r.rowId}
+                className={`rounded-2xl border p-3 ${
+                  changed ? 'border-[var(--gold-400)] bg-[var(--gold-300)]/10' : 'border-[var(--ink-200)]'
+                }`}
+              >
+                <div className="grid grid-cols-[auto_minmax(0,1fr)] sm:grid-cols-[auto_4rem_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto] gap-2 items-center">
+                  <div className="flex flex-col">
+                    <button
+                      type="button"
+                      onClick={() => move(idx, -1)}
+                      disabled={idx === 0 || busy}
+                      className="text-xs px-2 leading-5 rounded hover:bg-[var(--cream-100)] disabled:opacity-25"
+                      aria-label="Move up"
+                    >▲</button>
+                    <button
+                      type="button"
+                      onClick={() => move(idx, 1)}
+                      disabled={idx === rows.length - 1 || busy}
+                      className="text-xs px-2 leading-5 rounded hover:bg-[var(--cream-100)] disabled:opacity-25"
+                      aria-label="Move down"
+                    >▼</button>
+                  </div>
+                  <input
+                    value={r.emoji}
+                    onChange={(e) => patch(r.rowId, { emoji: e.target.value })}
+                    placeholder="Icon"
+                    aria-label="Icon (emoji)"
+                    className="w-full px-2 py-2 border border-[var(--ink-200)] rounded-lg text-center"
+                  />
+                  <input
+                    value={r.name}
+                    onChange={(e) => patch(r.rowId, { name: e.target.value })}
+                    placeholder="Name, e.g. Desserts"
+                    aria-label="Category name"
+                    autoFocus={!r.origKey}
+                    className="w-full px-3 py-2 border border-[var(--ink-200)] rounded-lg font-semibold"
+                  />
+                  <input
+                    value={r.name_zh}
+                    onChange={(e) => patch(r.rowId, { name_zh: e.target.value })}
+                    placeholder="Chinese (optional)"
+                    aria-label="Chinese name"
+                    className="w-full px-3 py-2 border border-[var(--ink-200)] rounded-lg"
+                  />
+                  <select
+                    value={r.station}
+                    onChange={(e) => patch(r.rowId, { station: e.target.value as PrintStation })}
+                    aria-label="Prints at"
+                    className="w-full px-3 py-2 border border-[var(--ink-200)] rounded-lg bg-white"
+                  >
+                    {PRINTER_CHOICES.map((p) => (
+                      <option key={p.value} value={p.value}>{p.label}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => remove(r)}
+                    disabled={busy}
+                    className="text-xs px-3 py-2 rounded-lg bg-[var(--brand-50)] hover:bg-[var(--brand-100)] text-[var(--brand-700)] font-bold disabled:opacity-40"
+                  >
+                    Delete
+                  </button>
+                </div>
+                <p className="text-[11px] text-[var(--ink-400)] mt-1.5 pl-8">
+                  {r.origKey ? `${n} item${n === 1 ? '' : 's'}` : 'New, not saved yet'}
+                  {r.origKey && changed ? ' · unsaved changes' : ''}
+                  {r.origKey && r.name.trim() && r.name.trim().toLowerCase() !== r.origKey && n > 0
+                    ? ` · renaming moves all ${n} item${n === 1 ? '' : 's'}`
+                    : ''}
+                </p>
+              </div>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={addRow}
+            disabled={busy}
+            className="w-full py-3 rounded-2xl border-2 border-dashed border-[var(--ink-200)] text-[var(--ink-500)] font-bold hover:bg-[var(--cream-50)]"
+          >
+            + Add category
+          </button>
+
+          {err && <ErrorBanner>{err}</ErrorBanner>}
+          {okMsg && (
+            <p className="text-sm font-semibold text-[var(--jade-600)]">✓ {okMsg}</p>
+          )}
+        </div>
+
+        <div className="shrink-0 px-6 py-4 border-t border-[var(--ink-100)]">
+          <div className="grid grid-cols-2 gap-2">
+            <SecondaryBtn
+              onClick={() => {
+                if (dirty.length > 0 && !confirm('You have unsaved changes. Close anyway?')) return;
+                onClose();
+              }}
+              disabled={busy}
+            >
+              Close
+            </SecondaryBtn>
+            <PrimaryBtn onClick={saveAll} disabled={busy || dirty.length === 0}>
+              {busy ? 'Saving…' : dirty.length > 0 ? `Save ${dirty.length} change${dirty.length === 1 ? '' : 's'}` : 'Saved'}
+            </PrimaryBtn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

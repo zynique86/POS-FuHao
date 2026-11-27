@@ -42,9 +42,9 @@ export type PrintStation = 'kitchen' | 'bar' | 'cashier';
 //  printer IP in printer-service/.env — only the on-screen/printed LABELS say
 //  "Back Kitchen" / "Front Kitchen" / "Bar".)
 //
-// To send a category to a different printer, change ONE line in the table
-// below — nothing else needs to change.  This is the single source of truth:
-// the POS, the kitchen/bar screens, the restock page and the cashier all use it.
+// The real source of truth is the category_station_routing table, which
+// admins edit in Admin > Menu > "Categories & printers".  The table below is
+// only the built-in fallback used before that loads (or if it can't load).
 const CATEGORY_STATION: Record<string, PrintStation> = {
   // Back kitchen (wok)
   'noodles': 'kitchen',
@@ -60,17 +60,27 @@ const CATEGORY_STATION: Record<string, PrintStation> = {
   'other': 'cashier',
 };
 
+// Live routing loaded from the category_station_routing table (which admins
+// edit in Admin > Menu > Categories & printers).  Filled by
+// lib/categories.ts; until it loads, the built-in table above is used.
+let liveCategoryStation: Record<string, PrintStation> | null = null;
+export function setLiveCategoryStations(map: Record<string, PrintStation> | null) {
+  liveCategoryStation = map;
+}
+
 export function stationForCategory(
   category: string | null | undefined
 ): PrintStation {
   // Normalise so stray casing / spacing can't misroute an item.
   const c = (category || '').trim().toLowerCase();
-  // Unknown / uncategorised items default to the front counter.
+  // Unknown / uncategorised items default to the front counter
+  // (same rule as send_order() in the database).
+  if (liveCategoryStation) return liveCategoryStation[c] ?? 'cashier';
   return CATEGORY_STATION[c] ?? 'cashier';
 }
 
-// Menu categories the WAITER sees and filters by — kept rich so items are easy
-// to find.  Each one routes to one of the three printer stations via
+// Built-in default category list (fallback only — the live list comes from
+// the database via useMenuCategories() in lib/categories.ts).  Each one routes to one of the three printer stations via
 // stationForCategory() above (shown in the comments).  Chinese labels stay
 // visible alongside the English so everyone sees both.
 export const MENU_CATEGORIES: { key: string; label: string; label_zh: string; emoji: string }[] = [
