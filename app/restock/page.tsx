@@ -98,7 +98,7 @@ export default function RestockPage() {
         </p>
         <div className="flex flex-wrap items-end justify-between gap-2 mt-1">
           <h1 className="text-2xl md:text-4xl font-bold text-[var(--ink-900)]">
-            Restock <span className="text-[var(--ink-500)] font-normal text-lg md:text-2xl">· 補貨</span>
+            Restock
           </h1>
           <span className="text-xs text-[var(--ink-400)]">
             {counterItems.length} counter item{counterItems.length === 1 ? '' : 's'}

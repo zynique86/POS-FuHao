@@ -31,6 +31,7 @@ import {
   ErrorBanner,
   EmptyState,
   inputBase,
+  FileUpload,
 } from '@/components/ui';
 import type {
   Expense,
@@ -582,14 +583,15 @@ function ExpenseForm({
         />
       </Field>
 
-      <Field label="Receipt photo" hint="Optional — JPG/PNG/PDF, max 8 MB">
-        <input
-          type="file"
-          accept="image/*,application/pdf"
-          onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
-          className="block text-sm text-[var(--ink-700)]"
-        />
-      </Field>
+      <FileUpload
+        label="Receipt photo"
+        hint="Optional — JPG/PNG/PDF, max 8 MB"
+        accept="image/*,application/pdf"
+        file={receiptFile}
+        onChange={setReceiptFile}
+        buttonText="Upload receipt photo"
+        icon="🧾"
+      />
 
       <div className="grid grid-cols-2 gap-3 mt-4">
         <SecondaryBtn onClick={reset}>Clear</SecondaryBtn>
