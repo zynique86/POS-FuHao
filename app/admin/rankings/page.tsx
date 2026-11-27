@@ -14,6 +14,7 @@ import { AdminPageHeader, ContentCard, ErrorBanner, EmptyState } from '@/compone
 import { type MenuItem, type OrderItem } from '@/lib/types';
 import { findCategory, useMenuCategories } from '@/lib/categories';
 import { businessDateStartISO, nextDateISO } from '@/lib/datetime';
+import { ADMIN_MAIN } from '@/lib/admin-layout';
 
 type RangeKey = 'today' | 'week' | 'month' | 'custom';
 
@@ -134,7 +135,7 @@ export default function RankingsPage() {
   }, [foodRanking]);
 
   return (
-    <main className="min-h-[calc(100vh-56px)] max-w-[1400px] mx-auto px-4 md:px-8 py-8">
+    <main className={ADMIN_MAIN}>
       <AdminPageHeader
         title="Sales Rankings"
         sub="Which foods and categories sell the most"

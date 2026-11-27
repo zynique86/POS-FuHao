@@ -1,11 +1,12 @@
 import Dashboard from './dashboard';
+import { ADMIN_MAIN } from '@/lib/admin-layout';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default function AdminPage() {
   return (
-    <main className="min-h-[calc(100vh-56px)] max-w-[1800px] mx-auto px-4 md:px-8 py-8">
+    <main className={ADMIN_MAIN}>
       <header className="mb-8 flex flex-wrap justify-between items-end gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.25em] text-[var(--ink-500)]">

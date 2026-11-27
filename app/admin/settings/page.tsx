@@ -6,6 +6,7 @@ import { fetchSettings } from '@/lib/settings';
 import { computeBreakdown } from '@/lib/pricing';
 import { AdminPageHeader } from '@/components/ui';
 import type { ShopSettings } from '@/lib/types';
+import { ADMIN_MAIN } from '@/lib/admin-layout';
 
 type Draft = {
   shop_name: string;
@@ -80,7 +81,7 @@ export default function AdminSettingsPage() {
 
   if (!draft) {
     return (
-      <main className="min-h-[calc(100vh-56px)] max-w-[1200px] mx-auto px-4 md:px-6 py-6">
+      <main className={ADMIN_MAIN}>
         <p className="text-[var(--ink-500)]">Loading settings…</p>
       </main>
     );
@@ -93,7 +94,7 @@ export default function AdminSettingsPage() {
   });
 
   return (
-    <main className="min-h-[calc(100vh-56px)] max-w-[1200px] mx-auto px-4 md:px-6 py-6">
+    <main className={ADMIN_MAIN}>
       <AdminPageHeader title="Settings" />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

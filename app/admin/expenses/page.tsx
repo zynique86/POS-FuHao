@@ -44,6 +44,7 @@ import {
 } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
 import { businessTodayISO } from '@/lib/datetime';
+import { ADMIN_MAIN } from '@/lib/admin-layout';
 
 // Which tab is currently active.  Every tab has its own quick-entry form
 // but they all write to the same `expenses` table.
@@ -151,7 +152,7 @@ export default function ExpensesPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-56px)] max-w-[1400px] mx-auto px-4 md:px-8 py-8">
+    <main className={ADMIN_MAIN}>
       <AdminPageHeader
         title="Daily Expenses"
         sub="Enter today's wages, meals, purchases, and other operating costs"

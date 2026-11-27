@@ -22,6 +22,7 @@ import type { Expense, Order, OrderItem, ExpenseKind } from '@/lib/types';
 import { EXPENSE_LABELS, PAY_METHOD_LABELS } from '@/lib/types';
 import { findCategory, sortByCategoryOrder, useMenuCategories } from '@/lib/categories';
 import { businessDateStartISO } from '@/lib/datetime';
+import { ADMIN_MAIN } from '@/lib/admin-layout';
 
 // -------------------------------------------------------------------------
 // Helpers
@@ -157,7 +158,7 @@ export default function MonthlyReportPage() {
   const margin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
 
   return (
-    <main className="min-h-[calc(100vh-56px)] max-w-[1400px] mx-auto px-4 md:px-8 py-8">
+    <main className={ADMIN_MAIN}>
       <AdminPageHeader
         title="Monthly Business Report"
         sub="Revenue, expenses and estimated operating profit"
